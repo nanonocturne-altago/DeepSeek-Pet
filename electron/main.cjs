@@ -101,6 +101,21 @@ function applyForeground() {
     petWindow.setAlwaysOnTop(true, 'floating');
     petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
   }
+  // 坑：macOS 在窗口切到 screen-saver 层级并「全屏可见」时会自动隐藏 Dock 图标，
+  // 这里在层级变更后重新断言 Dock 状态（延迟补刀一次，抵消系统异步隐藏）
+  reassertDock();
+}
+
+/** 重新应用 Dock 图标显示状态（抵消 macOS 层级切换引发的 Dock 自动隐藏） */
+function reassertDock() {
+  if (dockVisible) {
+    void app.dock.show();
+    setTimeout(() => {
+      if (dockVisible) void app.dock.show();
+    }, 150);
+  } else {
+    void app.dock.hide();
+  }
 }
 
 // 程序坞显示开关：隐藏 Dock 图标后应用不出现于 Cmd+Tab 与 Dock；恢复需经宠物菜单再次打开
