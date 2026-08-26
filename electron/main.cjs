@@ -24,14 +24,32 @@
 'use strict';
 const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { startServer } = require('./server.cjs');
+
+/** 启动诊断日志（写到 /tmp/pet-boot.log，便于排查窗口创建问题；无窗口环境也可读） */
+function bootLog(...args) {
+  try {
+    fs.appendFileSync('/tmp/pet-boot.log', '[' + new Date().toISOString() + '] ' + args.join(' ') + '\n');
+  } catch {
+    /* 日志失败不阻塞启动 */
+  }
+}
 
 /** 主窗口引用（穿透开关用） */
 let petWindow = null;
 
 /** 创建宠物窗口（透明置顶全工作区） */
 function createPetWindow(port) {
-  const { workArea } = screen.getPrimaryDisplay();
+  // 显示器选择：远程控制（向日葵等）会注入小尺寸虚拟显示器并可能成为 primary，
+  // 导致窗口建到用户看不到的屏幕上。策略：选 workArea 面积最大的显示器（物理屏），
+  // 后续版本再做多屏各开一个窗口。
+  const displays = screen.getAllDisplays();
+  const target = displays.reduce((best, d) =>
+    d.workArea.width * d.workArea.height > best.workArea.width * best.workArea.height ? d : best,
+  );
+  const { workArea } = target;
+  bootLog('displays=', displays.length, 'target workArea=', JSON.stringify(workArea));
   const win = new BrowserWindow({
     x: workArea.x,
     y: workArea.y,
@@ -48,6 +66,7 @@ function createPetWindow(port) {
     fullscreenable: false,
     focusable: false, // 不抢焦点（点击宠物仍可交互，键盘事件不需要）
     skipTaskbar: true,
+    show: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true, // 安全：渲染页与主进程隔离，只经 preload 暴露最小接口
@@ -55,23 +74,84 @@ function createPetWindow(port) {
       backgroundThrottling: false, // 后台不节流：宠物动画保持流畅
     },
   });
-  win.setAlwaysOnTop(true, 'screen-saver'); // 置顶层级：屏幕保护层（盖过绝大多数窗口）
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); // 所有 Space 可见
+  bootLog('window created: bounds=', JSON.stringify(win.getBounds()), 'visible=', win.isVisible());
+  win.once('ready-to-show', () => bootLog('window ready-to-show'));
+  win.webContents.on('did-finish-load', () => bootLog('renderer did-finish-load'));
+  win.webContents.on('did-fail-load', (_e, code, desc) => bootLog('renderer did-fail-load', code, desc));
+  win.setAlwaysOnTop(true, 'floating'); // 默认（前台显示 OFF）：普通置顶，全屏应用可盖过宠物
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
   win.setIgnoreMouseEvents(true, { forward: true }); // 初始：全屏点穿（不挡桌面操作）
   void win.loadURL('http://127.0.0.1:' + port + '/index.html');
   return win;
 }
 
-// 应用就绪：起服务器 → 建窗口
-app.whenReady().then(async () => {
-  const { port } = await startServer();
-  petWindow = createPetWindow(port);
+// ---- 「行为」开关（主进程为权威状态，菜单按钮经 preload 桥读写） ----
+let dockVisible = true; // 程序坞显示：默认显示 Dock 图标
+let foregroundOn = false; // 前台显示：默认不强制（全屏应用可盖过宠物）
 
-  // macOS：Dock 图标点击时不重建窗口（窗口常驻，仅确保可见）
-  app.on('activate', () => {
-    if (petWindow && !petWindow.isDestroyed()) petWindow.show();
-  });
+/** 按当前 foregroundOn 应用置顶层级 */
+function applyForeground() {
+  if (!petWindow || petWindow.isDestroyed()) return;
+  if (foregroundOn) {
+    // 强制最上层：屏幕保护层级 + 全屏 Space 可见 → 盖过包括全屏应用在内的一切
+    petWindow.setAlwaysOnTop(true, 'screen-saver');
+    petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  } else {
+    // 普通模式：浮于常规窗口之上，全屏应用（视频/游戏）可盖过宠物
+    petWindow.setAlwaysOnTop(true, 'floating');
+    petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+  }
+}
+
+// 程序坞显示开关：隐藏 Dock 图标后应用不出现于 Cmd+Tab 与 Dock；恢复需经宠物菜单再次打开
+ipcMain.on('pet-dock', (_event, show) => {
+  dockVisible = !!show;
+  bootLog('dock visible=', dockVisible);
+  if (dockVisible) void app.dock.show();
+  else void app.dock.hide();
 });
+
+// 前台显示开关
+ipcMain.on('pet-foreground', (_event, on) => {
+  foregroundOn = !!on;
+  bootLog('foreground=', foregroundOn);
+  applyForeground();
+});
+
+// 状态查询（菜单打开时同步按钮高亮）
+ipcMain.handle('pet-state', () => ({ dock: dockVisible, foreground: foregroundOn }));
+
+// 应用就绪：起服务器 → 建窗口
+app.whenReady()
+  .then(async () => {
+    bootLog('app ready');
+    const { port } = await startServer();
+    bootLog('server port=', port);
+    petWindow = createPetWindow(port);
+
+    // macOS：Dock 图标点击时不重建窗口（窗口常驻，仅确保可见）
+    app.on('activate', () => {
+      if (petWindow && !petWindow.isDestroyed()) petWindow.show();
+    });
+
+    // 显示器拓扑变化（远程连接/断开、插拔外接屏）：重新绑定到面积最大的显示器
+    const repositionToLargestDisplay = () => {
+      if (!petWindow || petWindow.isDestroyed()) return;
+      const ds = screen.getAllDisplays();
+      const t = ds.reduce((b, d) =>
+        d.workArea.width * d.workArea.height > b.workArea.width * b.workArea.height ? d : b,
+      );
+      const wa = t.workArea;
+      bootLog('reposition: displays=', ds.length, 'workArea=', JSON.stringify(wa));
+      petWindow.setBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height });
+    };
+    screen.on('display-added', repositionToLargestDisplay);
+    screen.on('display-removed', repositionToLargestDisplay);
+    screen.on('display-metrics-changed', repositionToLargestDisplay);
+  })
+  .catch((err) => {
+    bootLog('BOOT_ERROR', String((err && err.stack) || err));
+  });
 
 // 渲染页 IPC：光标悬停在宠物/菜单/弹窗上 → 关闭穿透（可交互）；离开 → 恢复穿透
 ipcMain.on('pet-interactive', (_event, interactive) => {

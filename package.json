@@ -68,7 +68,8 @@
     "prepare:mov": "node scripts/prepare.js mov",
     "build:app": "esbuild electron/renderer/main.ts --bundle --format=iife --outfile=dist/renderer.js",
     "start:app": "npm run build:app && electron electron/main.cjs",
-    "dist:mac": "npm run build:app && electron-builder --mac dmg",
+    "dist:mac": "npm run build:app && electron-builder --mac dmg --config.directories.output=../../pack_output/mac",
+    "dist:win": "npm run build:app && electron-builder --win portable --x64 --config.directories.output=../../pack_output/win",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -140,15 +141,19 @@
         "dmg"
       ],
       "category": "public.app-category.entertainment",
+      "icon": "assets/icon.png",
       "artifactName": "DeepSeekPet-${version}-mac-${arch}.${ext}"
     },
     "win": {
       "target": [
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
+      "icon": "assets/icon.png",
       "signAndEditExecutable": false,
       "artifactName": "DeepSeekPet-${version}-win-${arch}.${ext}"
     }

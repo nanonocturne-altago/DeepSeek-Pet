@@ -344,6 +344,10 @@ let creditsBox: HTMLDivElement | null = null; // 鸣谢弹窗
 let creditsOpen = false; // 鸣谢弹窗开/关
 let modeLedgerBtn: HTMLButtonElement | null = null; // 行4 用量：「本地记账(推荐)」按钮
 let modeTokenBtn: HTMLButtonElement | null = null; // 行4 用量：「API 实时」按钮
+let dockBtn: HTMLButtonElement | null = null; // 行5 行为：「程序坞显示」切换按钮（仅独立版存在）
+let topBtn: HTMLButtonElement | null = null; // 行5 行为：「前台显示」切换按钮（仅独立版存在）
+/** 独立版行为开关的本页镜像（主进程为权威，打开菜单时经桥同步） */
+const behaviorState = { dock: true, foreground: false };
 let apiBox: HTMLDivElement | null = null; // API key 更新弹窗
 let apiOpen = false; // API 弹窗开/关
 let apiInput: HTMLInputElement | null = null; // API 弹窗：密码输入框（已存 key 不回显，留空=不变）
@@ -512,12 +516,52 @@ function buildMenu(): HTMLDivElement {
   row4.appendChild(modeTokenBtn);
   updateModeButtons();
 
+  // 行5 行为（仅桌面独立版：经 window.petDesktop 桥控制主进程；插件版无桥则整行不渲染）
+  let row5: HTMLElement | null = null;
+  if (typeof window !== 'undefined' && window.petDesktop) {
+    dockBtn = document.createElement('button');
+    dockBtn.type = 'button';
+    dockBtn.className = 'dsh-pet-mode-btn';
+    dockBtn.textContent = '程序坞显示';
+    dockBtn.title = '切换下方程序坞（Dock）中应用图标的显示与隐藏';
+    dockBtn.addEventListener('click', () => {
+      const next = !behaviorState.dock;
+      behaviorState.dock = next; // 先更新本页镜像再同步高亮（主进程为权威，这里只是即时反馈）
+      window.petDesktop!.setDockVisible(next);
+      syncBehaviorButtons();
+    });
+
+    topBtn = document.createElement('button');
+    topBtn.type = 'button';
+    topBtn.className = 'dsh-pet-mode-btn';
+    topBtn.textContent = '前台显示';
+    topBtn.title = '激活后强制桌宠显示在所有应用最上层（含全屏应用）；再次点击取消';
+    topBtn.addEventListener('click', () => {
+      const next = !behaviorState.foreground;
+      behaviorState.foreground = next;
+      window.petDesktop!.setForeground(next);
+      syncBehaviorButtons();
+    });
+
+    row5 = row();
+    row5.appendChild(label('行为'));
+    row5.appendChild(dockBtn);
+    row5.appendChild(topBtn);
+    // 异步同步主进程当前状态（app 启动时主进程已初始化，这里仅对齐高亮）
+    void window.petDesktop.getState().then((st) => {
+      behaviorState.dock = st.dock;
+      behaviorState.foreground = st.foreground;
+      syncBehaviorButtons();
+    });
+  }
+
   box.appendChild(creditBtn);
   box.appendChild(row1);
   box.appendChild(row2);
   box.appendChild(row3);
   box.appendChild(rowInterval);
   box.appendChild(row4);
+  if (row5) box.appendChild(row5); // 行为行置于最后（用量下方）
   return box;
 }
 
@@ -793,6 +837,16 @@ function setIntervalSec(sliderValue: number): void {
 function updateModeButtons(): void {
   if (modeLedgerBtn) modeLedgerBtn.classList.toggle('dsh-pet-mode-active', settings.usageMode === 'ledger');
   if (modeTokenBtn) modeTokenBtn.classList.toggle('dsh-pet-mode-active', settings.usageMode === 'token');
+}
+
+/**
+ * 「行为」行按钮高亮同步（独立版）。
+ * 纯展示函数：按 behaviorState 镜像切换 .dsh-pet-mode-active 类；真实状态由主进程持有，
+ * 每次打开菜单时经 window.petDesktop.getState() 对齐一次，点击时先调桥再刷新。
+ */
+function syncBehaviorButtons(): void {
+  if (dockBtn) dockBtn.classList.toggle('dsh-pet-mode-active', behaviorState.dock);
+  if (topBtn) topBtn.classList.toggle('dsh-pet-mode-active', behaviorState.foreground);
 }
 
 /**

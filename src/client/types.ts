@@ -100,3 +100,18 @@ export interface ClientConfig {
   /** 事件刷新周期（秒）：事件名 → 间隔；balance = 余额数据刷新 + 动画触发间隔 */
   eventsRefreshSec: Record<string, number>;
 }
+
+/** 桌面独立版（Electron）经由 preload 暴露到渲染页的桥接口；
+ *  DSH 插件版中不存在该对象，菜单「行为」行应自动隐藏 */
+declare global {
+  interface Window {
+    petDesktop?: {
+      /** 切换程序坞（Dock）图标的显示/隐藏 */
+      setDockVisible(show: boolean): void;
+      /** 切换「前台显示」：强制置顶于所有应用（含全屏）之上 */
+      setForeground(on: boolean): void;
+      /** 读取当前开关状态（菜单打开时同步按钮高亮） */
+      getState(): Promise<{ dock: boolean; foreground: boolean }>;
+    };
+  }
+}
