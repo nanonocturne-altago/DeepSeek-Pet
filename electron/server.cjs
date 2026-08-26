@@ -31,13 +31,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { execFile } = require('node:child_process');
+const { app } = require('electron'); // 仅用于 app.isPackaged 判断（本文件由主进程加载，运行于 Electron 内）
 
 // ==================== 路径常量 ====================
 /** 应用根目录：源码运行时 = 项目根；打包后 = app.asar 内（fs 读取透明） */
 const APP_ROOT = path.join(__dirname, '..');
 /** 包内资源：动画/字体/图标/默认配置/自带音效 */
 const ASSET_DIR = path.join(APP_ROOT, 'assets');
-/** 用户数据目录（由 main.cjs 注入）：设置/账本/key/用户音效的落盘处 */
+/** 用户数据目录（默认与插件版共享 ~/.dsh/dsh-pet）：设置/账本/key 的落盘处；
+ *  注意：音效目录不走这里（见 resolveSoundDir：Windows 便携版 = exe 同级 sound/） */
 const USER_DATA = process.env.DSH_PET_USER_DATA || path.join(os.homedir(), '.dsh', 'dsh-pet');
 /** 用户覆盖配置（对应插件版的 $DSH_HOME/dsh-pet/main-config.json） */
 const USER_CONFIG_PATH = path.join(USER_DATA, 'main-config.json');
@@ -49,12 +51,25 @@ const API_KEY_PATH = path.join(USER_DATA, 'api-key.json');
 const LEDGER_PATH = path.join(USER_DATA, '.dshw-usage.json');
 /**
  * 用户音效目录（可写、可被系统文件管理器打开）：
- * - Windows 便携版（electron-builder 会注入 PORTABLE_EXECUTABLE_DIR）：exe 同级的 sound/ 文件夹，
- *   用户一眼可见，直接往里丢「名称1/2.mp3」成对文件即可自定义音效；
- * - 其他形态（macOS 应用、开发模式）：用户数据目录下的 sound/（通过菜单「···」按钮一键打开）。
+ * - Windows 便携版（已打包且平台为 win32）：exe 同级的 sound/ 文件夹——相对 exe 定位，
+ *   用户一眼可见，直接往里丢「名称+1/2.mp3」成对文件即可自定义音效；exe 目录不可写时回落用户数据目录；
+ * - macOS 应用 / 开发模式：用户数据目录下的 sound/（通过菜单「···」按钮一键打开）。
  */
-const PORTABLE_DIR = process.env.PORTABLE_EXECUTABLE_DIR || '';
-const SOUND_DIR = PORTABLE_DIR ? path.join(PORTABLE_DIR, 'sound') : path.join(USER_DATA, 'sound');
+function resolveSoundDir() {
+  if (process.platform === 'win32' && app.isPackaged) {
+    const exeDir = path.dirname(process.execPath);
+    const candidate = path.join(exeDir, 'sound');
+    try {
+      fs.mkdirSync(candidate, { recursive: true });
+      fs.accessSync(candidate, fs.constants.W_OK);
+      return candidate; // exe 同目录可写 → 就用它
+    } catch {
+      /* exe 目录只读（如被放在受保护位置）→ 回落到用户数据目录 */
+    }
+  }
+  return path.join(USER_DATA, 'sound');
+}
+const SOUND_DIR = resolveSoundDir();
 /** DSH 官方凭据存储（与插件版共用，仅读取） */
 const DSH_CREDENTIALS_PATH = path.join(os.homedir(), '.dsh', '.credentials.yaml');
 
