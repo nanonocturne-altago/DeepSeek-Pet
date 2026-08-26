@@ -95,7 +95,7 @@ dsh --profile web
 
 ## 五、许可说明
 
-- 本仓库保留原版 dsh-pet 的 MIT License（上游包内署名 PC2005-cloud，即 @宇宙之外的浩瀚宇）
+- 本仓库保留原版 dsh-pet 的 MIT License（来自 @宇宙之外的浩瀚宇）
 - 角色形象（@ZipZipPipe）、菜单/记账/音效移植（@月匠）与本地整合开发（nanonocturne-altago）归各自作者所有，仅限随本插件使用
 - 余额数据来自 DeepSeek 官方 API，使用时请遵守 DeepSeek 平台条款
 
