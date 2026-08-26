@@ -51,12 +51,14 @@ const API_KEY_PATH = path.join(USER_DATA, 'api-key.json');
 const LEDGER_PATH = path.join(USER_DATA, '.dshw-usage.json');
 /**
  * 用户音效目录（可写、可被系统文件管理器打开）：
- * - Windows 便携版（已打包且平台为 win32）：exe 同级的 sound/ 文件夹——相对 exe 定位，
- *   用户一眼可见，直接往里丢「名称+1/2.mp3」成对文件即可自定义音效；exe 目录不可写时回落用户数据目录；
- * - macOS 应用 / 开发模式：用户数据目录下的 sound/（通过菜单「···」按钮一键打开）。
+ * - Windows 便携版：exe 同级的 sound/ 文件夹——相对 exe 定位，用户一眼可见（不可写时回落用户数据目录）；
+ * - macOS 应用：标准应用数据目录 app.getPath('userData')/sound（~/Library/Application Support/DeepSeekPet/sound），
+ *   不再使用与插件版共享的 ~/.dsh/dsh-pet；经菜单「···」按钮一键打开；
+ * - 开发模式：与插件版共享的 USER_DATA/sound（不污染真实应用数据）。
  */
 function resolveSoundDir() {
-  if (process.platform === 'win32' && app.isPackaged) {
+  if (!app.isPackaged) return path.join(USER_DATA, 'sound'); // 开发模式
+  if (process.platform === 'win32') {
     const exeDir = path.dirname(process.execPath);
     const candidate = path.join(exeDir, 'sound');
     try {
@@ -66,10 +68,14 @@ function resolveSoundDir() {
     } catch {
       /* exe 目录只读（如被放在受保护位置）→ 回落到用户数据目录 */
     }
+    return path.join(app.getPath('userData'), 'sound');
   }
+  if (process.platform === 'darwin') return path.join(app.getPath('userData'), 'sound');
   return path.join(USER_DATA, 'sound');
 }
 const SOUND_DIR = resolveSoundDir();
+/** 旧音效目录（历史版本曾使用与插件版共享的 ~/.dsh/dsh-pet/sound），首次迁移来源 */
+const LEGACY_SOUND_DIR = path.join(USER_DATA, 'sound');
 /** DSH 官方凭据存储（与插件版共用，仅读取） */
 const DSH_CREDENTIALS_PATH = path.join(os.homedir(), '.dsh', '.credentials.yaml');
 
@@ -373,10 +379,22 @@ function soundFile(name, role) {
   return fs.existsSync(p) ? p : null;
 }
 
-/** 首次启动：把包内两套自带音效播种进用户音效目录 */
+/** 首次启动：把包内两套自带音效播种进用户音效目录；并迁移旧版音效目录中的用户文件 */
 function seedBuiltinSounds() {
   try {
     fs.mkdirSync(SOUND_DIR, { recursive: true });
+    // 旧目录迁移（历史版本 mac 曾用 ~/.dsh/dsh-pet/sound）：把用户自定义音效搬进新目录（不覆盖同名）
+    if (LEGACY_SOUND_DIR !== SOUND_DIR) {
+      try {
+        for (const f of fs.readdirSync(LEGACY_SOUND_DIR)) {
+          const src = path.join(LEGACY_SOUND_DIR, f);
+          const dst = path.join(SOUND_DIR, f);
+          if (fs.statSync(src).isFile() && !fs.existsSync(dst)) fs.copyFileSync(src, dst);
+        }
+      } catch {
+        /* 旧目录不存在或不可读则跳过 */
+      }
+    }
     const builtin = path.join(ASSET_DIR, 'sound');
     const pairs = [
       ['小黄鸭', ['小黄鸭1.mp3', '小黄鸭2.mp3']],
