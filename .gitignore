@@ -4,6 +4,10 @@ lib/
 dist/
 out/
 build/
+release/
+*.dmg
+*.exe
+*.blockmap
 
 # 系统垃圾
 .DS_Store

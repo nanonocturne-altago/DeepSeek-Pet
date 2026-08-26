@@ -69,14 +69,16 @@ const THUMB_EXT: string = '__PET_EXT__';
 
 /** Safari 不支持 VP9-alpha webm（透明通道渲染为黑底），只支持 HEVC-with-Alpha mov。
  *  本地双格式素材（assets/webm + assets/mov）并存时，Safari 运行时改用 .mov；
- *  其余浏览器沿用发布期注入的扩展名。 */
+ *  其余浏览器沿用发布期注入的扩展名。
+ *  兜底：独立版（Electron，esbuild 直接打包源码、无注入步骤）里占位符原样保留，
+ *  此时自动回落 .webm——Chromium 在 macOS/Windows 均支持 VP9-alpha。 */
 function playbackExt(): string {
   if (typeof navigator !== 'undefined') {
     const ua = String(navigator.userAgent || '');
     const isSafari = /Safari/i.test(ua) && !/Chrome|CriOS|Chromium|Edg|OPR|FxiOS/i.test(ua);
     if (isSafari) return '.mov';
   }
-  return THUMB_EXT;
+  return THUMB_EXT === '__PET_EXT__' ? '.webm' : THUMB_EXT;
 }
 
 /** 余额气泡展示时长（ms）：定时自动消失，与动画生命周期解耦 */
