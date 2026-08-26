@@ -545,7 +545,7 @@ function buildCredits(): HTMLDivElement {
       href: 'https://space.bilibili.com/1364176066',
     },
     { prefix: '菜单、记账模式、音效设定、定价换算：', text: '@月匠（bilibili）', href: 'https://space.bilibili.com/345797244' },
-    { prefix: 'Safari支持，整合功能，添加支持，完善逻辑，细节调整等：', text: 'nanonocturne-altago（github）' },
+    { prefix: 'Safari支持，整合功能，添加支持，完善逻辑，细节调整等：', text: 'nanonocturne-altago（github）', href: 'https://github.com/nanonocturne-altago/DeepSeek-Pet' },
   ];
 
   box.appendChild(title);
