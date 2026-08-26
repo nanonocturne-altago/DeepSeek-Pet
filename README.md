@@ -84,9 +84,15 @@ dsh --profile web
 
 本整合版建立在以下作者的开放分享之上，请支持他们：
 
-- **@ZipZipPipe**（形象设计）· Bilibili：<https://space.bilibili.com/4168597>
-- **@宇宙之外的浩瀚宇**（原版 dsh-pet 作者）· Bilibili：<https://space.bilibili.com/1364176066> · GitHub：<https://github.com/Vast-Beyond-Space/pet-app>
-- **@月匠**（菜单/记账/音效移植来源）· Bilibili：<https://space.bilibili.com/345797244> · GitHub：<https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget> · Gitee：<https://gitee.com/meteornox/DeepSeek-Balance-Whale-Widget>
+- **@ZipZipPipe**（形象设计）
+  - Bilibili：<https://space.bilibili.com/4168597>
+- **@宇宙之外的浩瀚宇**（原版 dsh-pet 作者）
+  - Bilibili：<https://space.bilibili.com/1364176066>
+  - GitHub：<https://github.com/Vast-Beyond-Space/pet-app>
+- **@月匠**（菜单/记账/音效移植来源）
+  - Bilibili：<https://space.bilibili.com/345797244>
+  - GitHub：<https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget>
+  - Gitee：<https://gitee.com/meteornox/DeepSeek-Balance-Whale-Widget>
 
 请大家支持原作者，Bilibili关注+投币，谢谢！
 
@@ -109,3 +115,10 @@ dsh --profile web
 - `whale-widget-prompt.md` 生成提示词
 
 以上资源的完整副本均随本仓库保留于 `原UP主的资源文件/` 中，供学习、复现素材流水线或二次开发使用。
+
+## 八、免责声明
+
+- 本插件为非官方整合项目，与 DeepSeek 官方及其开发团队无任何关联；余额与用量数据来自公开接口，最终准确性以 DeepSeek 官方数据为准
+- 本项目仅供学习与交流，请遵守 DeepSeek 平台服务条款并合理使用；因使用本插件产生的任何直接或间接后果（包括但不限于账号风险、费用支出等）由使用者自行承担，与各位贡献者无关
+- 角色形象、动画素材、音频与字体等内容的版权归原作者所有，仅限随本插件使用，请勿单独提取用于商业用途
+- 本整合包基于上游 MIT 协议开源项目整合，保留原协议；各部分版权归属详见「代码与内容来源」章节
