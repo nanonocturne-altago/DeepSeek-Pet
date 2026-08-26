@@ -48,6 +48,25 @@
 
 ## 三、安装与构建
 
+### 下载仓库（二选一）
+
+**方式一：仅运行必需文件**（不含「原UP主的资源文件」，下载更快，推荐只想安装使用）
+
+```bash
+git clone --filter=blob:none --sparse https://github.com/nanonocturne-altago/DeepSeek-Pet.git
+cd DeepSeek-Pet
+git sparse-checkout set --no-cone '/*' '!/原UP主的资源文件'
+```
+
+**方式二：完整下载**（含「原UP主的资源文件」，推荐收藏、学习素材流水线或二次开发）
+
+```bash
+git clone https://github.com/nanonocturne-altago/DeepSeek-Pet.git
+cd DeepSeek-Pet
+```
+
+### 安装与构建
+
 ```bash
 # 1. 安装依赖
 npm install
@@ -114,7 +133,7 @@ dsh --profile web
 - `README.md` 项目介绍
 - `whale-widget-prompt.md` 生成提示词
 
-以上资源的完整副本均随本仓库保留于 `原UP主的资源文件/` 中，供学习、复现素材流水线或二次开发使用。
+以上资源的完整副本均随本仓库保留于 `原UP主的资源文件/` 中，供学习、复现素材流水线或二次开发使用。如需下载这些资源，请在克隆仓库时选择「安装与构建」章节中的**方式二（完整下载）**；只安装使用插件则选择方式一即可。
 
 ## 八、免责声明
 
