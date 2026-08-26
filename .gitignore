@@ -1,0 +1,14 @@
+# 依赖与构建产物
+node_modules/
+lib/
+dist/
+out/
+build/
+
+# 系统垃圾
+.DS_Store
+*.log
+
+# 本地开发产物
+*.tgz
+.eslintcache
