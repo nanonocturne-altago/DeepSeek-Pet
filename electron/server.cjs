@@ -47,8 +47,14 @@ const WIDGET_SETTINGS_PATH = path.join(USER_DATA, 'widget-settings.json');
 const API_KEY_PATH = path.join(USER_DATA, 'api-key.json');
 /** 记账账本（余额差值累计今日已用） */
 const LEDGER_PATH = path.join(USER_DATA, '.dshw-usage.json');
-/** 用户音效目录（可写、可被系统文件管理器打开） */
-const SOUND_DIR = path.join(USER_DATA, 'sound');
+/**
+ * 用户音效目录（可写、可被系统文件管理器打开）：
+ * - Windows 便携版（electron-builder 会注入 PORTABLE_EXECUTABLE_DIR）：exe 同级的 sound/ 文件夹，
+ *   用户一眼可见，直接往里丢「名称1/2.mp3」成对文件即可自定义音效；
+ * - 其他形态（macOS 应用、开发模式）：用户数据目录下的 sound/（通过菜单「···」按钮一键打开）。
+ */
+const PORTABLE_DIR = process.env.PORTABLE_EXECUTABLE_DIR || '';
+const SOUND_DIR = PORTABLE_DIR ? path.join(PORTABLE_DIR, 'sound') : path.join(USER_DATA, 'sound');
 /** DSH 官方凭据存储（与插件版共用，仅读取） */
 const DSH_CREDENTIALS_PATH = path.join(os.homedir(), '.dsh', '.credentials.yaml');
 
