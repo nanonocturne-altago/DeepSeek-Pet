@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>DeepSeekPet 托盘菜单</title>
+    <style>
+      /* 托盘弹窗：与宠物汉堡菜单同一套配色（蓝 #203170 / 微透明白底）与按钮风格 */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        overflow: hidden;
+        font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        user-select: none;
+      }
+      .tray-panel {
+        box-sizing: border-box;
+        width: 220px;
+        padding: 8px;
+        border-radius: 10px;
+        background: rgba(248, 250, 255, 0.96);
+        border: 1px solid rgba(32, 49, 112, 0.25);
+        box-shadow: 0 4px 16px rgba(15, 23, 42, 0.18);
+      }
+      .tray-title {
+        font-size: 11px;
+        color: #6b7a9e;
+        padding: 2px 6px 6px;
+        letter-spacing: 0.5px;
+      }
+      /* 「关闭程序」按钮：常态白底蓝字 → 悬停微深 → 按下变蓝底白字（变暗），
+         松开恢复；点击后保持激活态（蓝底白字）直至进程退出 */
+      .tray-btn {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        border: 1px solid rgba(32, 49, 112, 0.45);
+        border-radius: 8px;
+        background: rgba(32, 49, 112, 0.06);
+        color: #203170;
+        font-size: 13px;
+        text-align: center;
+        cursor: pointer;
+        transition: background 0.12s ease, color 0.12s ease;
+      }
+      .tray-btn:hover {
+        background: rgba(32, 49, 112, 0.14);
+      }
+      .tray-btn:active,
+      .tray-btn.active {
+        background: #203170;
+        color: #ffffff;
+      }
+      .tray-hint {
+        margin-top: 6px;
+        font-size: 10px;
+        color: #98a4c0;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="tray-panel">
+      <div class="tray-title">DeepSeek娘相随</div>
+      <button id="quitBtn" class="tray-btn" type="button">关闭程序</button>
+      <div class="tray-hint">更多功能敬请期待</div>
+    </div>
+    <script>
+      // 关闭程序：按下即变激活态（蓝底白字），主进程收到后延时退出（让用户看清激活动画）
+      const btn = document.getElementById('quitBtn');
+      btn.addEventListener('mousedown', () => btn.classList.add('active'));
+      btn.addEventListener('mouseleave', () => {
+        if (!btn.dataset.confirmed) btn.classList.remove('active'); // 未点击时移出恢复
+      });
+      btn.addEventListener('click', () => {
+        btn.dataset.confirmed = '1';
+        btn.classList.add('active'); // 保持激活态直至退出
+        if (window.petDesktop && window.petDesktop.quitApp) window.petDesktop.quitApp();
+      });
+    </script>
+  </body>
+</html>

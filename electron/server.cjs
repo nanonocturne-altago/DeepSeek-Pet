@@ -469,6 +469,7 @@ function startServer() {
         // ---- 独立版应用页面（非宠物路由） ----
         if (!isPetRoute) {
           if (rest === '' || rest === 'index.html') return sendFile(res, path.join(__dirname, 'index.html'), 'text/html; charset=utf-8');
+          if (rest === 'tray' || rest === 'tray.html') return sendFile(res, path.join(__dirname, 'tray.html'), 'text/html; charset=utf-8'); // Windows 托盘弹窗
           if (rest === 'renderer.js') return sendFile(res, path.join(APP_ROOT, 'dist', 'renderer.js'), 'text/javascript');
           return sendJson(res, 404, { error: 'not found' });
         }

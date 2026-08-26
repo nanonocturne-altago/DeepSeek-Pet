@@ -142,6 +142,9 @@
       ],
       "category": "public.app-category.entertainment",
       "icon": "assets/icon.png",
+      "extendInfo": {
+        "CFBundleDisplayName": "DeepSeek娘相随"
+      },
       "artifactName": "DeepSeekPet-${version}-mac-${arch}.${ext}"
     },
     "win": {
