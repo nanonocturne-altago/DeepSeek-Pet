@@ -8,6 +8,7 @@
 - **工作目录（唯一源码树）**：/Users/dante/Agent_tools/Agent_Plugin/Deepseek_pet_for_windows
 - 原 dsh-pet：/Users/dante/Agent_tools/Agent_Plugin/dsh-pet —— **只读存档**，未经用户同意不得修改
 - **打包产物目录（用户指定）**：/Users/dante/Agent_tools/pack_output —— dmg 进 MAC/、Windows zip 进 WIN/
+- **备份目录**：/Users/dante/Agent_tools/Agent_Plugin/BackUP —— 备份 Deepseek_pet_for_windows 内的所有文件与文件夹。**未经用户明确要求更新备份时，严禁修改此备份的任何内容**
 - GitHub：https://github.com/nanonocturne-altago/DeepSeek-Pet（public，gh CLI 已登录）
 
 ## 架构
