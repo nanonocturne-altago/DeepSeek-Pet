@@ -50,6 +50,27 @@
 
 ## 三、安装与构建
 
+### 独立桌面版（DeepSeekPet）——推荐，无需任何依赖
+
+| 平台 | 下载文件 | 安装方式 |
+| --- | --- | --- |
+| macOS（Apple 芯片） | `DeepSeekPet-<版本>-mac-arm64.dmg` | 打开 dmg → 拖入「应用程序」→ 双击运行；提示"无法验证开发者"时右键点打开（详见 Releases 说明） |
+| Windows（Intel/AMD） | `DeepSeekPet-<版本>-win-x64.zip` | 解压到任意可写文件夹 → 双击 `DeepSeekPet.exe` |
+| Windows（ARM64） | `DeepSeekPet-<版本>-win-arm64.zip` | 同上 |
+
+**下载地址**：本仓库 **Releases** 页面（右侧 Releases 栏）——每个版本附带独立的 dmg/zip 下载链接与更新说明。
+
+**首次运行自动创建的文件夹**（绿色便携：整个文件夹拷走即迁移、删除即卸载，不写系统隐藏目录）：
+
+| 平台 | 动画 DIY 目录 | 音效目录 | 数据目录 |
+| --- | --- | --- | --- |
+| macOS | `~/Library/Application Support/DeepSeek.Pet/anime/` | `~/Library/Application Support/DeepSeek.Pet/sound/` | 同母目录 |
+| Windows | exe 同级 `motion/` | exe 同级 `sound/` | exe 同级 `data/` |
+
+动画目录内按触发类别分 11 个中文文件夹（待机/转身/移动/点击/拖曳/余额/小动作/玩耍/吃什么/时节/文字），支持 `webm / GIF / APNG / PNG` 混用——丢入或替换文件约 1 秒自动生效（菜单「自定动作」按钮一键打开动画文件夹）。
+
+### DSH 插件版（源码构建）
+
 ### 下载仓库（二选一）
 
 **方式一：仅运行必需文件**（不含「原UP主的资源文件」，下载更快，推荐只想安装使用）
