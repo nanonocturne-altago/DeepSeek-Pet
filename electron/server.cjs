@@ -706,6 +706,28 @@ function startServer() {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'method not allowed' });
           return sendJson(res, 200, await openSoundDir());
         }
+        // 动画文件夹文件清单（DIY 随机池：客户端按文件夹内实际文件纯随机选取）
+        if (rest === 'anime-files') {
+          const out = {};
+          for (const folder of new Set(ANIME_FOLDER_MAP.values())) {
+            const names = new Set();
+            try {
+              for (const f of fs.readdirSync(path.join(ANIME_DIR, folder))) {
+                if (f.endsWith('.webm')) names.add(f.slice(0, -'.webm'.length));
+              }
+            } catch {
+              /* 文件夹不存在则回落配置名单 */
+            }
+            // 文件夹被清空时回落配置名单，保证有动画可播（素材由包内兜底提供）
+            if (names.size === 0) {
+              for (const [n, fd] of ANIME_FOLDER_MAP) {
+                if (fd === folder) names.add(n);
+              }
+            }
+            out[folder] = [...names].sort();
+          }
+          return sendJson(res, 200, out);
+        }
         // 动画素材（webm；名称防路径穿越；优先用户动画目录（DIY），缺失回落包内）
         if (rest.startsWith('thumb/')) {
           const name = rest.slice('thumb/'.length);

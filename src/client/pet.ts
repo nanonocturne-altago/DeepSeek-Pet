@@ -171,6 +171,43 @@ export function makePetUI(rt: {
     // ---- React 状态 ----
     // 当前动画名（状态驱动：anim/once/seq 任一变化 → effect 调用 switchTo 切视频）
     const [anim, setAnim] = useState(config.animations.idle[0] ?? '');
+
+    // DIY 随机池：外部动画文件夹（DSH.Pet.Anime / motion）中 idle/turn/drag 的实际文件清单。
+    // 选中该大类后按清单文件数纯随机（1 个文件=100%，4 个=各 25%）；未加载时回落配置名单。
+    const [animeDir, setAnimeDir] = useState<{ idle: string[]; turn: string[]; drag: string[] }>({
+      idle: [],
+      turn: [],
+      drag: [],
+    });
+    const animeDirRef = useRef(animeDir);
+    useEffect(() => {
+      animeDirRef.current = animeDir;
+    }, [animeDir]);
+    // 挂载时拉取一次，之后每 15s 刷新：往文件夹增删 webm 后最多 15 秒自动加入/退出随机池
+    useEffect(() => {
+      let alive = true;
+      const refresh = async () => {
+        try {
+          const r = await fetch('/dsh-pet-7340/anime-files');
+          if (!r.ok) return;
+          const data = (await r.json()) as Record<string, string[]>;
+          if (!alive) return;
+          setAnimeDir((prev) => ({
+            idle: Array.isArray(data.idle) && data.idle.length ? data.idle : prev.idle,
+            turn: Array.isArray(data.turn) && data.turn.length ? data.turn : prev.turn,
+            drag: Array.isArray(data.drag) && data.drag.length ? data.drag : prev.drag,
+          }));
+        } catch {
+          /* 服务未就绪等瞬时故障：保持现有清单（下一次轮询重试） */
+        }
+      };
+      void refresh();
+      const timer = window.setInterval(() => void refresh(), 15_000);
+      return () => {
+        alive = false;
+        window.clearInterval(timer);
+      };
+    }, []);
     // 是否「单次播放」：true = 播完触发 handleEnded 接续下一段；false = 循环播放（如 idle 呼吸）
     const [once, setOnce] = useState(true);
     // 朝向：left/right。影响镜像（scaleX(-1)）与 turn/move 的方向选择
@@ -364,11 +401,13 @@ export function makePetUI(rt: {
       let next: string;
       if (k === 'idle') {
         kind = 'IDLE';
-        next = pick(animations.idle, animRef.current);
+        const pool = animeDirRef.current.idle.length ? animeDirRef.current.idle : animations.idle;
+        next = pick(pool, animRef.current);
         setAnim(next);
       } else if (k === 'turn') {
         kind = 'TURN';
-        next = pick(animations.turn, animRef.current);
+        const pool = animeDirRef.current.turn.length ? animeDirRef.current.turn : animations.turn;
+        next = pick(pool, animRef.current);
         setAnim(next);
       } else if (k === 'move') {
         const moved = tryMove();
@@ -459,15 +498,17 @@ export function makePetUI(rt: {
       if (dragRef.current.active) return;
       // 事件动画播完：回 idle（与 drag/clicks 同分支，不进入随机链）；气泡由定时器自动消失，与动画解耦
       const isEvent = Object.values(animations.events ?? {}).some((pool) => pool.includes(animRef.current));
+      const idlePool = animeDirRef.current.idle.length ? animeDirRef.current.idle : animations.idle;
       if (isEvent) {
         chainAdvance(() => {
-          if (animations.idle.length) setAnim(pick(animations.idle, animRef.current));
+          if (idlePool.length) setAnim(pick(idlePool, animRef.current));
           setOnce(true);
           setSeq((s) => s + 1);
         });
         return;
       }
-      if (animations.turn.includes(animRef.current)) {
+      const isTurn = animations.turn.includes(animRef.current) || animeDirRef.current.turn.includes(animRef.current);
+      if (isTurn) {
         chainAdvance(() => {
           const next = facing === 'left' ? 'right' : 'left';
           setFacing(next);
@@ -476,9 +517,10 @@ export function makePetUI(rt: {
         });
         return;
       }
-      if (animations.drag.includes(animRef.current) || animations.clicks.includes(animRef.current)) {
+      const isDrag = animations.drag.includes(animRef.current) || animeDirRef.current.drag.includes(animRef.current);
+      if (isDrag || animations.clicks.includes(animRef.current)) {
         chainAdvance(() => {
-          if (animations.idle.length) setAnim(pick(animations.idle, animRef.current));
+          if (idlePool.length) setAnim(pick(idlePool, animRef.current));
           setOnce(true);
           setSeq((s) => s + 1);
         });
@@ -576,7 +618,11 @@ export function makePetUI(rt: {
       if (!actions.length) return false;
       const chosen = actions[Math.floor(Math.random() * actions.length)];
       const mp = Object.assign({}, moves.default, chosen.params || {});
-      const dir = (facingRef.current === 'right') !== config.animations.turn.includes(animRef.current) ? 1 : -1;
+      const dir =
+        (facingRef.current === 'right') !==
+        (config.animations.turn.includes(animRef.current) || animeDirRef.current.turn.includes(animRef.current))
+          ? 1
+          : -1;
       const W = window.innerWidth;
       // 移动距离随宠物缩放：config 的 minDist/maxDist 是基准尺寸（462px 宽）下的 px，
       // 按 实际size/基准 等比缩放 —— 小宠物挪小步、大宠物挪大步，与人物自身大小匹配
@@ -653,7 +699,8 @@ export function makePetUI(rt: {
         setDragging(true);
         setOnce(true);
         if (config.animations.drag.length) {
-          const name = pick(config.animations.drag);
+          const pool = animeDirRef.current.drag.length ? animeDirRef.current.drag : config.animations.drag;
+          const name = pick(pool);
           console.log('[dsh-pet] ' + new Date().toTimeString().slice(0, 8) + ' pet=' + cfg.id + ' -> [DRAG] ' + name);
           setAnim(name);
         }
