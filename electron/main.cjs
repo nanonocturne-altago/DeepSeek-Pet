@@ -25,7 +25,35 @@
 const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+
+// ==================== 用户数据目录（独立版专属命名空间） ====================
+// 独立版与 DSH 插件彻底解耦：统一使用「DeepSeek.Pet」作为用户数据母目录，
+// 避免与 DeepSeek Harness（dsh-*）及原作者的 dsh-pet 产生误解或文件冲突。
+// macOS → ~/Library/Application Support/DeepSeek.Pet；Windows → %APPDATA%\DeepSeek.Pet
+// 注意：必须在 require('./server.cjs') 之前设置——server.cjs 在模块加载期就会解析动画目录。
+app.setPath('userData', path.join(app.getPath('appData'), 'DeepSeek.Pet'));
+
 const { startServer } = require('./server.cjs');
+
+/** 把历史版本的旧母目录数据迁入新目录（仅迁自有子目录，Electron 自身缓存不迁） */
+function migrateLegacyDirs() {
+  try {
+    const oldBase = path.join(app.getPath('appData'), 'dsh-pet'); // 历史版本 userData 落点
+    const newBase = app.getPath('userData');
+    if (oldBase === newBase || !fs.existsSync(oldBase)) return;
+    for (const sub of ['DSH.Pet.Anime', 'sound']) {
+      const src = path.join(oldBase, sub);
+      const dst = path.join(newBase, sub);
+      if (fs.existsSync(src) && !fs.existsSync(dst)) {
+        fs.mkdirSync(newBase, { recursive: true });
+        fs.renameSync(src, dst);
+        bootLog('migrated ' + sub + ' → ' + newBase);
+      }
+    }
+  } catch (e) {
+    bootLog('migrate error: ' + String(e));
+  }
+}
 
 /** 启动诊断日志（写到 /tmp/pet-boot.log，便于排查窗口创建问题；无窗口环境也可读） */
 function bootLog(...args) {
@@ -175,6 +203,7 @@ function createTray() {
 app.whenReady()
   .then(async () => {
     bootLog('app ready');
+    migrateLegacyDirs(); // 旧母目录（dsh-pet）→ DeepSeek.Pet（必须在服务播种前，否则 DIY 文件不会被迁移）
     const { port } = await startServer();
     bootLog('server port=', port);
     petWindow = createPetWindow(port);

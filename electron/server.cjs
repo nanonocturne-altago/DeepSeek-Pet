@@ -43,12 +43,36 @@ try {
   electronApp = null;
 }
 const isPackagedApp = electronApp ? electronApp.isPackaged : false;
-/** 应用数据目录（打包后）：~/Library/Application Support/DeepSeekPet 等 */
+/** 应用数据目录（打包后）：~/Library/Application Support/DeepSeek.Pet（main.cjs 已重定向） */
 const appUserDataDir = () =>
   electronApp ? electronApp.getPath('userData') : path.join(os.homedir(), '.dsh', 'dsh-pet');
-/** 用户数据目录（默认与插件版共享 ~/.dsh/dsh-pet）：设置/账本/key 的落盘处；
- *  注意：音效与动画目录不走这里（见 resolveSoundDir 与 ANIME_DIR） */
-const USER_DATA = process.env.DSH_PET_USER_DATA || path.join(os.homedir(), '.dsh', 'dsh-pet');
+/** 用户数据目录（设置/账本/API Key）：
+ * - 打包独立版：Electron userData（main.cjs 已重定向为 DeepSeek.Pet）——与 DSH 插件彻底分离
+ * - 纯 node 测试环境：回落 ~/.dsh/dsh-pet（与插件版同源，便于测试装置复用既有数据）
+ * 注意：音效与动画目录另见 resolveSoundDir / ANIME_DIR */
+const USER_DATA =
+  process.env.DSH_PET_USER_DATA ||
+  (electronApp ? electronApp.getPath('userData') : path.join(os.homedir(), '.dsh', 'dsh-pet'));
+
+/**
+ * 旧插件共享目录（~/.dsh/dsh-pet）→ 新独立目录的数据迁移：
+ * 仅复制顶层文件（widget-settings.json / 账本 / api-key.json 等），不覆盖新目录已有文件；
+ * 插件版仍使用旧目录（双方自此分家，互不干扰）。
+ */
+function migrateUserData() {
+  const legacy = path.join(os.homedir(), '.dsh', 'dsh-pet');
+  if (USER_DATA === legacy || !fs.existsSync(legacy)) return;
+  try {
+    fs.mkdirSync(USER_DATA, { recursive: true });
+    for (const f of fs.readdirSync(legacy)) {
+      const sp = path.join(legacy, f);
+      const dp = path.join(USER_DATA, f);
+      if (fs.statSync(sp).isFile() && !fs.existsSync(dp)) fs.copyFileSync(sp, dp);
+    }
+  } catch {
+    /* 迁移失败不阻塞启动（下次启动会重试） */
+  }
+}
 
 // ==================== 路径常量 ====================
 /** 应用根目录：源码运行时 = 项目根；打包后 = app.asar 内（fs 读取透明） */
@@ -639,6 +663,7 @@ function soundSetFromUrl(url) {
 /** 启动服务器：返回 { port }（随机可用端口，由 main.cjs 注入页面地址） */
 function startServer() {
   return new Promise((resolve) => {
+    migrateUserData(); // 旧插件共享目录 → DeepSeek.Pet 独立目录（文件级迁移，不覆盖）
     migrateAnimeFolders();
     seedBuiltinSounds();
     seedAnimeDirs();
