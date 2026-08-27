@@ -94,6 +94,71 @@ const SINGLE_CLICK_DELAY_MS = 550;
  *   - .dsh-pet-stage：舞台（16:9 区域，宽 = --dsh-pet-size），整体 pointer-events:none
  *   - .dsh-pet-video：双缓冲视频（A/B 轮换），前台加 .is-front 淡入（transition .18s）
  *   - .dsh-pet-hit：命中层（唯一的 pointer-events:auto 区域），承载拖拽/点击 + 抓取光标 */
+/** GIF 总时长（ms）：扫描 Graphic Control Extension 的帧延迟并累加（单位 1/100 秒，0 视为 100ms） */
+function gifDuration(bytes: Uint8Array): number {
+  let total = 0;
+  let i = 13; // 跳过 6 字节头 + 7 字节逻辑屏幕描述符
+  const read = (o: number) => bytes[o] ?? 0;
+  while (i < bytes.length) {
+    const b = read(i);
+    if (b === 0x21) {
+      // 扩展块：21 <label> <子块序列…> 00
+      if (read(i + 1) === 0xf9) {
+        // Graphic Control Extension：21 F9 04 <packed> <delay_lo> <delay_hi> <trans> 00
+        const delay = read(i + 4) | (read(i + 5) << 8);
+        total += (delay === 0 ? 10 : delay) * 10;
+      }
+      let j = i + 2;
+      while (j < bytes.length) {
+        const size = read(j);
+        j += 1;
+        if (size === 0) break;
+        j += size;
+      }
+      i = j + 1;
+    } else if (b === 0x3b) break; // 文件结束符
+    else if (b === 0x2c) {
+      // 图像描述符：2c + 9 字节 + 局部色表(可选) + LZW 最小码长(1) + 数据子块…
+      const packed = read(i + 9);
+      let j = i + 10;
+      if ((packed & 0x80) !== 0) j += 3 * (1 << ((packed & 7) + 1));
+      j += 1;
+      while (j < bytes.length) {
+        const size = read(j);
+        j += 1;
+        if (size === 0) break;
+        j += size;
+      }
+      i = j + 1;
+    } else i += 1;
+  }
+  return total;
+}
+
+/** APNG/PNG 总时长（ms）：累加 fcTL 帧延迟；无 acTL（静态 PNG）返回 3000 兜底 */
+function apngDuration(bytes: Uint8Array): number {
+  if (bytes.length < 8 || bytes[0] !== 0x89) return 3000;
+  let total = 0;
+  let animated = false;
+  let i = 8;
+  const u32 = (o: number) =>
+    ((bytes[o] ?? 0) << 24) | ((bytes[o + 1] ?? 0) << 16) | ((bytes[o + 2] ?? 0) << 8) | (bytes[o + 3] ?? 0);
+  while (i + 8 <= bytes.length) {
+    const len = u32(i);
+    const type = String.fromCharCode(bytes[i + 4], bytes[i + 5], bytes[i + 6], bytes[i + 7]);
+    if (type === 'acTL') animated = true;
+    else if (type === 'fcTL') {
+      // fcTL 数据：seq(4)+w(4)+h(4)+x(4)+y(4)=20 字节 → delay_num(2) delay_den(2)
+      const num = (bytes[i + 8 + 20] ?? 0) | ((bytes[i + 8 + 21] ?? 0) << 8);
+      const den = (bytes[i + 8 + 22] ?? 0) | ((bytes[i + 8 + 23] ?? 0) << 8);
+      total += den === 0 ? 100 : (num / den) * 1000;
+    }
+    i += 12 + len;
+    if (type === 'IEND') break;
+  }
+  return animated ? total : 3000;
+}
+
 const css = [
   '.dsh-pet-root{position:fixed;z-index:40;pointer-events:none;user-select:none}',
   '.dsh-pet-root[data-corner="bottom-right"]{right:var(--dsh-pet-mx,24px);bottom:var(--dsh-pet-my,0)}',
@@ -103,6 +168,8 @@ const css = [
   '.dsh-pet-stage{position:relative;width:var(--dsh-pet-size,462px);height:calc(var(--dsh-pet-size,462px)*9/16);pointer-events:none}',
   '.dsh-pet-video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;opacity:0;transition:opacity .18s ease;transform-origin:center}',
   '.dsh-pet-video.is-front{opacity:1}',
+  '.dsh-pet-img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;opacity:0;transition:opacity .18s ease;transform-origin:center}',
+  '.dsh-pet-img.is-front{opacity:1}',
   '.dsh-pet-hit{position:absolute;pointer-events:auto;cursor:url("/dsh-pet-7340/pic/cursor-grab.png") 16 16, grab;z-index:1}',
   '.dsh-pet-hit.dragging{cursor:url("/dsh-pet-7340/pic/cursor-grabbing.png") 16 16, grabbing}',
   '@media (prefers-reduced-motion: reduce){.dsh-pet-video{transition:none}}',
@@ -250,6 +317,14 @@ export function makePetUI(rt: {
     // 双缓冲视频 A/B：前台播放、后台预载，切换时交替
     const videoARef = useRef<HTMLVideoElement | null>(null);
     const videoBRef = useRef<HTMLVideoElement | null>(null);
+    // GIF/APNG 双缓冲 img 槽：与 video 双槽同构，仅以 onload 代替 loadeddata、以时长定时器代替 ended
+    const imgARef = useRef<HTMLImageElement | null>(null);
+    const imgBRef = useRef<HTMLImageElement | null>(null);
+    const imgFrontRef = useRef(0); // 0=A 前台，1=B 前台
+    const imgPendingRef = useRef<{ anim: string; once: boolean; gen: number } | null>(null);
+    const imgGenRef = useRef(0);
+    const imgEndTimerRef = useRef<number | null>(null); // 单次播放的「结束」定时器（img 无 ended 事件，用解析出的总时长模拟）
+    const durationCacheRef = useRef<Map<string, number>>(new Map()); // 动画时长缓存（按文件名）
     // 当前前台视频索引（0=A / 1=B）；切换成功后翻转
     const frontRef = useRef(0);
     // 挂起的切换请求：loadeddata 就绪前记录目标动画与代际，用于去重与陈旧判定
@@ -274,16 +349,42 @@ export function makePetUI(rt: {
      * 已知坑：旧前台视频必须 onended=null + pause()，否则它播完后触发 handleEnded
      *         （此时它已不是前台，历史上仍会掐断当前动画造成随机急速跳转）。
      */
+    /**
+     * 动画切换入口：按文件扩展名分派渲染路径。
+     * - .webm/.mov（或无扩展名的配置名）→ 双缓冲 <video>（Safari 自动回落 .mov）
+     * - .gif/.png/.apng → 双缓冲 <img>（动图格式，透明度：GIF 1-bit、APNG 8-bit）
+     */
     const switchTo = (next: string, nextOnce: boolean) => {
+      if (!next) return;
+      if (/\.(gif|png|apng)$/i.test(next)) switchToImg(next, nextOnce);
+      else switchToVideo(next, nextOnce);
+    };
+
+    /**
+     * 视频路径（原 switchTo）：双缓冲 <video> 交叉淡入淡出。
+     * @param next 动画名（不含扩展名；带扩展名的视频文件名也可，此时忽略 playbackExt 追加）
+     * @param nextOnce 是否单次播放（决定 loop 与是否挂 handleEnded）
+     * 返回：无（异步完成）；重复请求同名同 once 直接去重；目标 DOM 未挂载时静默放弃。
+     * 已知坑：旧前台视频必须 onended=null + pause()，否则它播完后触发 handleEnded
+     *         （此时它已不是前台，历史上仍会掐断当前动画造成随机急速跳转）。
+     */
+    const switchToVideo = (next: string, nextOnce: boolean) => {
       if (!next) return;
       const pending = pendingRef.current;
       if (pending && pending.anim === next && pending.once === nextOnce) return;
+      // 跨格式防护：清掉 img 单次播放的结束定时器（视频接管前台，旧动图定时器不得再推进链）
+      if (imgEndTimerRef.current !== null) {
+        window.clearTimeout(imgEndTimerRef.current);
+        imgEndTimerRef.current = null;
+      }
       const gen = ++genRef.current;
       pendingRef.current = { anim: next, once: nextOnce, gen };
       const target = frontRef.current === 0 ? videoBRef : videoARef;
       const el = target.current;
       if (!el) return;
-      el.src = '/dsh-pet-7340/thumb/' + encodeURIComponent(next) + playbackExt();
+      const base = '/dsh-pet-7340/thumb/' + encodeURIComponent(next);
+      // 带扩展名的完整文件名直接用自身扩展；无扩展名的配置名追加平台扩展（Safari .mov / 其余 .webm）
+      el.src = /\.[a-z0-9]+$/i.test(next) ? base : base + playbackExt();
       el.loop = !nextOnce;
       el.muted = true;
       el.autoplay = true;
@@ -310,6 +411,87 @@ export function makePetUI(rt: {
       };
       el.addEventListener('loadeddata', onReady);
       if (el.readyState >= 2) onReady();
+      // 跨格式切换：清掉 img 槽的前台态（视频接管前台时旧动图必须退场）
+      if (imgARef.current) imgARef.current.classList.remove('is-front');
+      if (imgBRef.current) imgBRef.current.classList.remove('is-front');
+    };
+
+    /**
+     * 动图路径（GIF/APNG/静态 PNG）：双缓冲 <img> 交叉淡入淡出。
+     * 与视频路径的差异：无 ended 事件——单次播放时解析文件总时长，用定时器触发 handleEnded；
+     * 循环播放（nextOnce=false）则依赖 GIF/APNG 自身循环。
+     */
+    const switchToImg = (next: string, nextOnce: boolean) => {
+      const pending = imgPendingRef.current;
+      if (pending && pending.anim === next && pending.once === nextOnce) return;
+      const gen = ++imgGenRef.current;
+      imgPendingRef.current = { anim: next, once: nextOnce, gen };
+      const target = imgFrontRef.current === 0 ? imgBRef : imgARef;
+      const el = target.current;
+      if (!el) return;
+      el.src = '/dsh-pet-7340/thumb/' + encodeURIComponent(next);
+      const onLoad = () => {
+        el.removeEventListener('load', onLoad);
+        if (imgPendingRef.current?.gen !== gen) return;
+        const old = imgFrontRef.current === 0 ? imgARef : imgBRef;
+        el.classList.add('is-front');
+        if (old.current && old.current !== el) old.current.classList.remove('is-front');
+        imgFrontRef.current = imgFrontRef.current === 0 ? 1 : 0;
+        imgPendingRef.current = null;
+        el.style.transform = facingRef.current === 'right' ? 'scaleX(-1)' : '';
+        // 单次播放：解析总时长后定时推进动画链（链上其它切换会先清掉本定时器，见 handleEnded 路径）
+        if (imgEndTimerRef.current !== null) {
+          window.clearTimeout(imgEndTimerRef.current);
+          imgEndTimerRef.current = null;
+        }
+        if (nextOnce) {
+          void fetchAnimeDuration(next).then((ms) => {
+            const isFrontNow = imgFrontRef.current === (el === imgARef.current ? 0 : 1);
+            if (!isFrontNow) return; // 已被切换走：不推进
+            imgEndTimerRef.current = window.setTimeout(handleEnded, Math.max(ms, 300));
+          });
+        }
+      };
+      el.addEventListener('load', onLoad);
+      if (el.complete) onLoad();
+      // 跨格式切换：清掉 video 槽的前台态；并停掉旧前台视频 + 摘除其 onended
+      //（否则旧视频播完仍会触发 handleEnded，掐断动图动画链——与视频路径的拆雷同理）
+      if (videoARef.current) {
+        videoARef.current.classList.remove('is-front');
+        videoARef.current.onended = null;
+        videoARef.current.pause();
+      }
+      if (videoBRef.current) {
+        videoBRef.current.classList.remove('is-front');
+        videoBRef.current.onended = null;
+        videoBRef.current.pause();
+      }
+    };
+
+    /**
+     * 获取动图（GIF/APNG）总时长（ms）：拉取文件并解析；解析失败回落 3000ms 兜底。
+     * 结果按文件名缓存（durationCacheRef），同一会话内不重复拉取解析。
+     */
+    const fetchAnimeDuration = async (name: string): Promise<number> => {
+      const cached = durationCacheRef.current.get(name);
+      if (cached !== undefined) return cached;
+      let ms = 3000;
+      try {
+        const r = await fetch('/dsh-pet-7340/thumb/' + encodeURIComponent(name));
+        if (r.ok) {
+          const bytes = new Uint8Array(await r.arrayBuffer());
+          if (bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) {
+            ms = gifDuration(bytes);
+          } else {
+            ms = apngDuration(bytes);
+          }
+        }
+      } catch {
+        /* 兜底 3000ms */
+      }
+      if (ms <= 0) ms = 3000;
+      durationCacheRef.current.set(name, ms);
+      return ms;
     };
 
     // ---- 状态驱动播放 ----
@@ -873,6 +1055,8 @@ export function makePetUI(rt: {
           children: [
             h('video', Object.assign({}, commonVideoProps, { ref: videoARef, className: 'dsh-pet-video is-front' })),
             h('video', Object.assign({}, commonVideoProps, { ref: videoBRef, className: 'dsh-pet-video' })),
+            h('img', { ref: imgARef, className: 'dsh-pet-img', alt: '', draggable: false }),
+            h('img', { ref: imgBRef, className: 'dsh-pet-img', alt: '', draggable: false }),
             h('div', hitProps),
           ],
         }),

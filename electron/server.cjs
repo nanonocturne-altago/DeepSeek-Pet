@@ -153,6 +153,19 @@ function buildAnimeFolderMap() {
   return map;
 }
 
+/** 在用户动画目录的所有类别文件夹中定位文件（DIY 自定义名不在配置映射内时使用；目录小、线性扫描足够快） */
+function findAnimeFile(name) {
+  try {
+    for (const folder of fs.readdirSync(ANIME_DIR)) {
+      const p = path.join(ANIME_DIR, folder, name);
+      if (fs.existsSync(p)) return p;
+    }
+  } catch {
+    /* 目录不存在 */
+  }
+  return null;
+}
+
 /**
  * 旧版英文文件夹 → 新中文名迁移（在播种前执行）：
  * 老用户已播种过英文目录，直接改代码会导致重新播种一份中文副本（旧目录残留、空间双倍）。
@@ -734,11 +747,13 @@ function startServer() {
         // 动画文件夹文件清单（DIY 随机池：客户端按文件夹内实际文件纯随机选取）
         if (rest === 'anime-files') {
           const out = {};
+          const EXTS = ['.webm', '.mov', '.gif', '.png', '.apng']; // 支持的动图/视频格式（GIF/APNG 走 img 渲染）
           for (const folder of new Set(ANIME_FOLDER_MAP.values())) {
             const names = new Set();
             try {
               for (const f of fs.readdirSync(path.join(ANIME_DIR, folder))) {
-                if (f.endsWith('.webm')) names.add(f.slice(0, -'.webm'.length));
+                const lower = f.toLowerCase();
+                if (EXTS.some((e) => lower.endsWith(e))) names.add(f); // 完整文件名（含扩展名，驱动渲染路径分派）
               }
             } catch {
               /* 文件夹不存在则回落配置名单 */
@@ -757,13 +772,22 @@ function startServer() {
         if (rest.startsWith('thumb/')) {
           const name = rest.slice('thumb/'.length);
           if (!name || name.includes('/') || name.includes('..')) return sendJson(res, 400, { error: 'bad path' });
-          const base = name.replace(/\.(webm|mov)$/i, ''); // 映射键为不带扩展名的动画名
+          const ext = (name.match(/\.(webm|mov|gif|png|apng)$/i) || [])[1];
+          const base = ext ? name.slice(0, -(ext.length + 1)) : name; // 映射键为不带扩展名的动画名
           const folder = ANIME_FOLDER_MAP.get(base);
+          const mime =
+            ext === 'gif' ? 'image/gif' : ext === 'png' || ext === 'apng' ? 'image/png' : 'video/webm';
           if (folder) {
             const extPath = path.join(ANIME_DIR, folder, name);
-            if (fs.existsSync(extPath)) return sendFile(res, extPath, 'video/webm');
+            if (fs.existsSync(extPath)) return sendFile(res, extPath, mime);
           }
-          return sendFile(res, path.join(ASSET_DIR, 'webm', name), 'video/webm');
+          // DIY 文件（自定义名，不在配置映射中）：反向扫描所有类别文件夹定位
+          {
+            const hit = findAnimeFile(name);
+            if (hit) return sendFile(res, hit, mime);
+          }
+          // 包内回落（包内仅 webm 原版素材）
+          return sendFile(res, path.join(ASSET_DIR, 'webm', ext ? name : name + '.webm'), 'video/webm');
         }
         // 字体（气泡用上首软糖体）
         if (rest.startsWith('font/')) {
