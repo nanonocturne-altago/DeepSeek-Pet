@@ -290,7 +290,9 @@ const menuCss = [
   '.dsh-pet-menu.dsh-pet-menu-open{opacity:1;transform:scale(1) translateY(0);pointer-events:auto}',
   '.dsh-pet-menu-row{display:flex;align-items:center;gap:8px;margin:5px 0;color:#203170;font-size:12px;white-space:nowrap}',
   '.dsh-pet-menu-range{flex:1;min-width:0;accent-color:#203170}',
-  '.dsh-pet-menu-number{width:46px;border:1px solid rgba(32,49,112,.4);border-radius:6px;padding:2px 4px;font-size:12px;color:#203170;background:#fff}',
+  '.dsh-pet-anime-btn{height:22px;flex:none;margin-left:4px;border:none;border-radius:6px;background:rgba(32,49,112,.85);color:#fff;font-size:11px;line-height:22px;padding:0 8px;cursor:pointer;transition:background .12s ease}',
+  '.dsh-pet-anime-btn:hover{background:#203170}',
+  '.dsh-pet-anime-btn:active{background:#141f47}',
   '.dsh-pet-menu-select{flex:1;min-width:0;border:1px solid rgba(32,49,112,.4);border-radius:6px;background:rgba(32,49,112,.08);color:#203170;font-size:12px;padding:3px 0;cursor:pointer}',
   // 打开音效目录按钮（窄、蓝底白字；按压变暗、松开恢复）
   '.dsh-pet-sounddir-btn{width:20px;height:22px;flex:none;margin-left:4px;border:none;border-radius:6px;background:rgba(32,49,112,.85);color:#fff;font-size:11px;line-height:22px;text-align:center;cursor:pointer;padding:0;transition:background .12s ease}',
@@ -334,7 +336,7 @@ let menuCssInjected = false; // 样式是否已注入 <head>（幂等开关）
 let menuBox: HTMLDivElement | null = null; // 菜单面板本体
 let menuOpen = false; // 菜单开/关（toggleMenu 翻转，closeMenu 复位）
 let scaleInput: HTMLInputElement | null = null; // 行1 大小：range 滑块（0.6–2.5）
-let scaleNumber: HTMLInputElement | null = null; // 行1 大小：number 输入（1–20，线性映射）
+let animeBtn: HTMLButtonElement | null = null; // 行1 大小：「自定动作」按钮（打开动画 DIY 文件夹）
 let soundSelect: HTMLSelectElement | null = null; // 行2 音效：下拉（refreshSoundSets 动态重建选项）
 let volInput: HTMLInputElement | null = null; // 行3 音量：range 滑块（0–1）
 let volPct: HTMLSpanElement | null = null; // 行3 音量：右侧百分比文本
@@ -361,15 +363,6 @@ let apiUpdateBtn: HTMLButtonElement | null = null; // API 弹窗：「更新」�
  */
 export function isOverlayOpen(): boolean {
   return menuOpen || creditsOpen || apiOpen;
-}
-
-/**
- * 真实缩放值 → 菜单数字框显示值（1–20 整数，线性映射；与 setScale 中数字框回读方向相反）。
- * @param s 真实缩放（0.6–2.5）
- * @returns 1..20 的显示值（0.6→1，2.5→20）
- */
-function scaleToDisplay(s: number): number {
-  return Math.round((s - MIN_SCALE) / ((MAX_SCALE - MIN_SCALE) / 19)) + 1;
 }
 
 /**
@@ -423,22 +416,18 @@ function buildMenu(): HTMLDivElement {
   scaleInput.className = 'dsh-pet-menu-range';
   scaleInput.value = String(settings.scale);
   scaleInput.addEventListener('input', () => setScale(Number(scaleInput?.value)));
-  scaleNumber = document.createElement('input');
-  scaleNumber.type = 'number';
-  scaleNumber.min = '1';
-  scaleNumber.max = '20';
-  scaleNumber.step = '1';
-  scaleNumber.className = 'dsh-pet-menu-number';
-  scaleNumber.value = String(scaleToDisplay(settings.scale));
-  scaleNumber.addEventListener('change', () => {
-    const v = Math.round(Number(scaleNumber?.value));
-    const s = MIN_SCALE + Math.max(0, Math.min(20, v) - 1) * ((MAX_SCALE - MIN_SCALE) / 19);
-    setScale(s);
+  animeBtn = document.createElement('button');
+  animeBtn.type = 'button';
+  animeBtn.className = 'dsh-pet-anime-btn';
+  animeBtn.textContent = '自定动作';
+  animeBtn.title = '打开动画文件夹（可替换/添加动画素材）';
+  animeBtn.addEventListener('click', () => {
+    void fetch('/dsh-pet-7340/open-anime-dir', { method: 'POST' }).catch(() => undefined);
   });
   const row1 = row();
   row1.appendChild(label('大小'));
   row1.appendChild(scaleInput);
-  row1.appendChild(scaleNumber);
+  row1.appendChild(animeBtn);
 
   // 行2 音效（选项动态：每次打开菜单时向 host 拉取目录扫描结果并重建；初始以当前设置兜底）
   soundSelect = document.createElement('select');
@@ -758,8 +747,8 @@ function resetApiUpdateBtn(): void {
   }
 }
 
-/** 打开 API 弹窗：加 .dsh-pet-apibox-open 触发 CSS 过渡，置 apiOpen 旗标 */
-function openApiPopup(): void {
+/** 打开 API Key 弹窗（双击刷新发现缺 key 时自动调用，引导用户填写） */
+export function openApiPopup(): void {
   if (!apiBox) return;
   apiBox.classList.add('dsh-pet-apibox-open');
   apiOpen = true;
@@ -787,7 +776,6 @@ function setScale(v: number): void {
   const next = Math.round(Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(v))) * 10) / 10;
   settings = { ...settings, scale: next };
   if (scaleInput) scaleInput.value = String(next);
-  if (scaleNumber) scaleNumber.value = String(scaleToDisplay(next));
   saveSettings({ scale: next });
   for (const fn of scaleHandlers) fn(next);
 }
@@ -1068,7 +1056,6 @@ export async function loadWidgetSettings(): Promise<WidgetSettings> {
   // 菜单控件与加载后的设置对齐（面板可能已先按默认值构建）
   if (scaleInput) {
     scaleInput.value = String(settings.scale);
-    if (scaleNumber) scaleNumber.value = String(scaleToDisplay(settings.scale));
   }
   if (soundSelect) soundSelect.value = settings.soundSet;
   if (volInput) {

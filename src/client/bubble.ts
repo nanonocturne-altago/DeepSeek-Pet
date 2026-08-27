@@ -142,7 +142,7 @@ export function makeBalanceBubble(rt: {
         state.reason === 'unsupported'
           ? '当前服务商暂不支持余额查询'
           : state.reason === 'credential-missing'
-            ? '缺少凭证：' + (state.message ?? '')
+            ? '未配置 API Key，双击宠物已为您打开设置弹窗'
             : '余额查询失败';
       rows.push(h('div', { className: 'pet-bub-err', children: msg }));
     }

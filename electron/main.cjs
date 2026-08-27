@@ -139,10 +139,9 @@ ipcMain.handle('pet-state', () => ({ dock: dockVisible, foreground: foregroundOn
 // ==================== Windows 系统托盘 ====================
 
 let tray = null; // 托盘图标（仅 Windows）
-let trayPopup = null; // 托盘弹窗（自定义 HTML 菜单，含「关闭程序」按钮）
 
 /** 创建系统托盘：右键图标弹出自定义菜单弹窗（更多功能后续追加按钮） */
-function createTray(port) {
+function createTray() {
   if (process.platform !== 'win32') return; // macOS 走程序坞方案，不建托盘
   const iconPath = path.join(__dirname, '..', 'assets', 'icon.png');
   let icon = null;
@@ -154,47 +153,13 @@ function createTray(port) {
   }
   tray = new Tray(icon || nativeImage.createEmpty());
   tray.setToolTip('DeepSeek娘相随');
-
-  // 托盘弹窗：无边框小窗口，样式与宠物菜单一致（tray.html）
-  trayPopup = new BrowserWindow({
-    width: 220,
-    height: 108,
-    frame: false,
-    resizable: false,
-    movable: false,
-    minimizable: false,
-    maximizable: false,
-    show: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    fullscreenable: false,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-  void trayPopup.loadURL(`http://127.0.0.1:${port}/tray`);
-  // 失焦（点到别处）自动收起弹窗
-  trayPopup.on('blur', () => {
-    if (trayPopup && trayPopup.isVisible()) trayPopup.hide();
-  });
-
-  // 右键托盘图标 → 在图标上方弹出菜单弹窗
-  tray.on('right-click', () => {
-    showTrayPopup();
-  });
-  tray.on('click', () => {
-    showTrayPopup();
-  });
-
-  // 标准上下文菜单（兜底：若弹窗加载失败仍有菜单可用，最底部「关闭程序」）
+  // 右键托盘图标弹出原生上下文菜单（Windows 上 setContextMenu 后右键自动弹出）
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'DeepSeek娘相随', enabled: false },
       { type: 'separator' },
       {
-        label: '关闭程序',
+        label: '退出',
         click: () => {
           bootLog('quit via tray context menu');
           app.quit();
@@ -204,26 +169,7 @@ function createTray(port) {
   );
 }
 
-/** 把托盘弹窗定位到托盘图标上方（任务栏右下角区域） */
-function showTrayPopup() {
-  if (!trayPopup) return;
-  const bounds = tray.getBounds(); // 托盘图标屏幕矩形
-  const { workArea } = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y });
-  const [w, h] = trayPopup.getSize();
-  let x = Math.round(bounds.x + bounds.width / 2 - w / 2);
-  let y = Math.round(workArea.y + workArea.height - h - 4); // 贴任务栏上方
-  // 越界修正
-  x = Math.max(workArea.x + 4, Math.min(x, workArea.x + workArea.width - w - 4));
-  trayPopup.setPosition(x, y);
-  trayPopup.show();
-  trayPopup.focus();
-}
 
-// 退出应用（托盘「关闭程序」）：延时让按钮激活动画可见后退出
-ipcMain.on('pet-quit', () => {
-  bootLog('quit requested via tray popup');
-  setTimeout(() => app.quit(), 400);
-});
 
 // 应用就绪：起服务器 → 建窗口
 app.whenReady()
@@ -232,7 +178,7 @@ app.whenReady()
     const { port } = await startServer();
     bootLog('server port=', port);
     petWindow = createPetWindow(port);
-    createTray(port); // Windows：系统托盘（macOS 下为空操作）
+    createTray(); // Windows：系统托盘（macOS 下为空操作）
 
     // macOS：Dock 图标点击时不重建窗口（窗口常驻，仅确保可见）
     app.on('activate', () => {

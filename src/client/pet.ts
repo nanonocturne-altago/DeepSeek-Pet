@@ -41,6 +41,7 @@ import {
   petPressUp,
   toggleMenu,
 } from './menu';
+import { openApiPopup } from './menu';
 import {
   CANVAS_H,
   EDGE_M_B,
@@ -295,7 +296,15 @@ export function makePetUI(rt: {
       if (!cfg.balanceEnabled) return; // 未启用余额功能 -> 该宠物对余额事件完全免疫
       if (balanceTick === 0 || balanceTick === prevTickRef.current) return;
       prevTickRef.current = balanceTick;
-      if (!balance || !balance.ok) return;
+      if (!balance || !balance.ok) {
+        // 双击刷新却缺 API Key：自动弹出设置框引导填写（仅用户主动触发的刷新；周期轮询不打扰）
+        if (manualRefreshRef.current && balance && balance.reason === 'credential-missing') {
+          manualRefreshRef.current = false;
+          openApiPopup();
+        }
+        return;
+      }
+      manualRefreshRef.current = false;
       const p = balancePercent(balance);
       if (p === undefined) return; // 当前数据源没有百分比语义（如 DeepSeek 余额），不触发档位动画
       const pool = config.animations.events?.balance;
@@ -714,6 +723,7 @@ export function makePetUI(rt: {
       setAnim(name);
     };
     /** 双击：仅触发余额刷新（余额动画 + 气泡由 balanceTick effect 按档位播放） */
+    const manualRefreshRef = useRef(false); // 标记本次刷新是否为用户双击触发（缺 key 时据此弹 API 设置框）
     const handleDoubleClick = () => {
       if (clickTimerRef.current !== null) {
         window.clearTimeout(clickTimerRef.current);
@@ -721,7 +731,10 @@ export function makePetUI(rt: {
       }
       stopMove();
       cancelChainTimer();
-      if (cfg.balanceEnabled && onManualRefresh) onManualRefresh();
+      if (cfg.balanceEnabled && onManualRefresh) {
+        manualRefreshRef.current = true;
+        onManualRefresh();
+      }
     };
     // 卸载清理：单击判定定时器（防组件销毁后误触发）
     useEffect(() => () => {

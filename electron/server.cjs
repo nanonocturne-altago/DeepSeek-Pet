@@ -43,18 +43,131 @@ try {
   electronApp = null;
 }
 const isPackagedApp = electronApp ? electronApp.isPackaged : false;
-/** 标准应用数据目录（macOS/Windows 打包版音效落盘处；无 electron 时回落用户目录） */
+/** 应用数据目录（打包后）：~/Library/Application Support/DeepSeekPet 等 */
 const appUserDataDir = () =>
   electronApp ? electronApp.getPath('userData') : path.join(os.homedir(), '.dsh', 'dsh-pet');
+/** 用户数据目录（默认与插件版共享 ~/.dsh/dsh-pet）：设置/账本/key 的落盘处；
+ *  注意：音效与动画目录不走这里（见 resolveSoundDir 与 ANIME_DIR） */
+const USER_DATA = process.env.DSH_PET_USER_DATA || path.join(os.homedir(), '.dsh', 'dsh-pet');
 
 // ==================== 路径常量 ====================
 /** 应用根目录：源码运行时 = 项目根；打包后 = app.asar 内（fs 读取透明） */
 const APP_ROOT = path.join(__dirname, '..');
 /** 包内资源：动画/字体/图标/默认配置/自带音效 */
 const ASSET_DIR = path.join(APP_ROOT, 'assets');
-/** 用户数据目录（默认与插件版共享 ~/.dsh/dsh-pet）：设置/账本/key 的落盘处；
- *  注意：音效目录不走这里（见 resolveSoundDir：Windows 便携版 = exe 同级 sound/） */
-const USER_DATA = process.env.DSH_PET_USER_DATA || path.join(os.homedir(), '.dsh', 'dsh-pet');
+/**
+ * 解析 JSONC（支持 // 与 /* 注释；字符串感知，注释标记在字符串内不误伤）
+ */
+function parseJsonc(text) {
+  let out = '';
+  let i = 0;
+  let inStr = false;
+  let inLine = false;
+  let inBlock = false;
+  while (i < text.length) {
+    const ch = text[i];
+    const nx = text[i + 1];
+    if (inLine) {
+      if (ch === '\n') {
+        inLine = false;
+        out += ch;
+      }
+      i++;
+      continue;
+    }
+    if (inBlock) {
+      if (ch === '*' && nx === '/') {
+        inBlock = false;
+        i += 2;
+      } else i++;
+      continue;
+    }
+    if (inStr) {
+      out += ch;
+      if (ch === '\\') {
+        out += nx;
+        i += 2;
+        continue;
+      }
+      if (ch === '"') inStr = false;
+      i++;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      out += ch;
+      i++;
+      continue;
+    }
+    if (ch === '/' && nx === '/') {
+      inLine = true;
+      i += 2;
+      continue;
+    }
+    if (ch === '/' && nx === '*') {
+      inBlock = true;
+      i += 2;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return JSON.parse(out);
+}
+
+/**
+ * 用户动画目录（DIY 可维护性）：
+ * - macOS 应用：~/Library/Application Support/DSH.Pet.Anime
+ * - Windows 便携版：exe 同级 motion/
+ * - 开发/测试模式：USER_DATA/anime（避免污染真实目录）
+ * 首次启动把包内动画按「触发类别」分文件夹播种（idle/turn/moves/clicks/drag/balance + 各分类动作 id），
+ * 之后 /thumb 优先从该目录取文件（缺文件回落包内 webm），用户替换/新增文件即可 DIY。
+ */
+const ANIME_DIR = (() => {
+  if (isPackagedApp && process.platform === 'darwin') return path.join(appUserDataDir(), 'DSH.Pet.Anime');
+  if (isPackagedApp && process.platform === 'win32') return path.join(path.dirname(process.execPath), 'motion');
+  return path.join(USER_DATA, 'anime');
+})();
+
+/** 动画名 → 子文件夹 映射（由包内 config.jsonc 的动画分类构建） */
+const ANIME_FOLDER_MAP = buildAnimeFolderMap();
+function buildAnimeFolderMap() {
+  const map = new Map();
+  try {
+    const raw = fs.readFileSync(path.join(ASSET_DIR, 'config.jsonc'), 'utf8');
+    const cfg = parseJsonc(raw);
+    const an = (cfg && cfg.animations) || {};
+    const put = (list, folder) => {
+      for (const n of list || []) map.set(String(n), folder);
+    };
+    put(an.idle, 'idle');
+    put(an.turn, 'turn');
+    put(an.drag, 'drag');
+    put(an.clicks, 'clicks');
+    put(an.events && an.events.balance, 'balance');
+    put((an.moves && an.moves.actions || []).map((a) => a.name), 'moves');
+    for (const cat of an.categories || []) put(cat.actions, String(cat.id));
+  } catch (e) {
+    console.error('[server] 动画分类映射构建失败（回退全部指向 webm 根）', e);
+  }
+  return map;
+}
+
+/** 首次启动：把包内动画按分类播种进用户动画目录（缺文件才复制，不覆盖用户改动） */
+function seedAnimeDirs() {
+  try {
+    for (const [name, folder] of ANIME_FOLDER_MAP) {
+      const dest = path.join(ANIME_DIR, folder, name + '.webm');
+      if (fs.existsSync(dest)) continue;
+      const src = path.join(ASSET_DIR, 'webm', name + '.webm');
+      if (!fs.existsSync(src)) continue;
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(src, dest);
+    }
+  } catch (e) {
+    console.error('[server] 动画播种失败', e);
+  }
+}
 /** 用户覆盖配置（对应插件版的 $DSH_HOME/dsh-pet/main-config.json） */
 const USER_CONFIG_PATH = path.join(USER_DATA, 'main-config.json');
 /** 挂件设置（大小/音效/音量/间隔/用量模式） */
@@ -490,6 +603,7 @@ function soundSetFromUrl(url) {
 function startServer() {
   return new Promise((resolve) => {
     seedBuiltinSounds();
+    seedAnimeDirs();
     const server = http.createServer(async (req, res) => {
       try {
         const url = new URL(req.url || '/', 'http://localhost');
@@ -501,8 +615,7 @@ function startServer() {
         // ---- 独立版应用页面（非宠物路由） ----
         if (!isPetRoute) {
           if (rest === '' || rest === 'index.html') return sendFile(res, path.join(__dirname, 'index.html'), 'text/html; charset=utf-8');
-          if (rest === 'tray' || rest === 'tray.html') return sendFile(res, path.join(__dirname, 'tray.html'), 'text/html; charset=utf-8'); // Windows 托盘弹窗
-          if (rest === 'renderer.js') return sendFile(res, path.join(APP_ROOT, 'dist', 'renderer.js'), 'text/javascript');
+          if (rest === 'renderer.js') return sendFile(res, path.join(__dirname, '..', 'dist', 'renderer.js'), 'text/javascript; charset=utf-8');
           return sendJson(res, 404, { error: 'not found' });
         }
 
@@ -576,15 +689,33 @@ function startServer() {
           }
           return sendJson(res, 405, { error: 'method not allowed' });
         }
+        // 打开动画文件夹（DIY 入口）：macOS 用 open、Windows 用 explorer
+        if (rest === 'open-anime-dir') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'method not allowed' });
+          try {
+            fs.mkdirSync(ANIME_DIR, { recursive: true });
+            if (process.platform === 'win32') execFile('explorer', [ANIME_DIR]);
+            else execFile('open', [ANIME_DIR]);
+            return sendJson(res, 200, { ok: true });
+          } catch (e) {
+            return sendJson(res, 500, { error: String(e) });
+          }
+        }
         // 打开音效目录（系统文件管理器）
         if (rest === 'open-sound-dir') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'method not allowed' });
           return sendJson(res, 200, await openSoundDir());
         }
-        // 动画素材（webm；名称防路径穿越）
+        // 动画素材（webm；名称防路径穿越；优先用户动画目录（DIY），缺失回落包内）
         if (rest.startsWith('thumb/')) {
           const name = rest.slice('thumb/'.length);
           if (!name || name.includes('/') || name.includes('..')) return sendJson(res, 400, { error: 'bad path' });
+          const base = name.replace(/\.(webm|mov)$/i, ''); // 映射键为不带扩展名的动画名
+          const folder = ANIME_FOLDER_MAP.get(base);
+          if (folder) {
+            const extPath = path.join(ANIME_DIR, folder, name);
+            if (fs.existsSync(extPath)) return sendFile(res, extPath, 'video/webm');
+          }
           return sendFile(res, path.join(ASSET_DIR, 'webm', name), 'video/webm');
         }
         // 字体（气泡用上首软糖体）

@@ -114,8 +114,6 @@ declare global {
       setForeground(on: boolean): void;
       /** 读取当前开关状态（菜单打开时同步按钮高亮） */
       getState(): Promise<{ dock: boolean; foreground: boolean }>;
-      /** 退出整个应用（托盘「关闭程序」按钮） */
-      quitApp(): void;
     };
   }
 }
