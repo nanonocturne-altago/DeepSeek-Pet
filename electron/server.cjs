@@ -694,6 +694,8 @@ function startServer() {
         }
 
         // ---- 宠物路由（与插件版 host 同构） ----
+        // 应用页面（宠物窗口加载地址 http://127.0.0.1:<port>/dsh-pet-7340/，与根路径双入口）
+        if (rest === '' || rest === 'index.html') return sendFile(res, path.join(__dirname, 'index.html'), 'text/html; charset=utf-8');
         // 宠物默认配置层（包内 config.jsonc）
         if (rest === 'config.jsonc') return sendFile(res, path.join(ASSET_DIR, 'config.jsonc'), 'application/json; charset=utf-8');
         // 用户覆盖配置层（main-config.json；缺失 → 空对象回落默认）

@@ -357,13 +357,22 @@ let apiClearBtn: HTMLButtonElement | null = null; // API 弹窗：「清空API�
 let apiUpdateBtn: HTMLButtonElement | null = null; // API 弹窗：「更新」按钮（成功变「已更新」）
 
 /**
- * 是否有菜单/弹窗处于打开状态。
- * 独立版渲染入口据此强制窗口「可交互」：点击穿透开启时，外部点击会落到下方应用、
- * 页面收不到事件，导致「点菜单外关闭」失效——弹层打开期间必须让点击到达本页面。
- */
-export function isOverlayOpen(): boolean {
-  return menuOpen || creditsOpen || apiOpen;
-}
+ /** 是否有菜单/弹窗处于打开状态。
+  * 独立版渲染入口据此强制窗口「可交互」：点击穿透开启时，外部点击会落到下方应用、
+  * 页面收不到事件，导致「点菜单外关闭」失效——弹层打开期间必须让点击到达本页面。
+  */
+ export function isOverlayOpen(): boolean {
+   return menuOpen || creditsOpen || apiOpen;
+ }
+
+ /** 文件夹打开事件监听（pet.ts 注册：用户点「自定动作 / ···」后强唤醒动画文件夹扫描） */
+ let folderOpenedListener: (() => void) | null = null;
+ export function setFolderOpenedListener(fn: (() => void) | null): void {
+   folderOpenedListener = fn;
+ }
+ function notifyFolderOpened(): void {
+   if (folderOpenedListener) folderOpenedListener();
+ }
 
 /**
  * 构建菜单面板（仅由 ensureMenu 调用一次）。
@@ -422,7 +431,9 @@ function buildMenu(): HTMLDivElement {
   animeBtn.textContent = '自定动作';
   animeBtn.title = '打开动画文件夹（可替换/添加动画素材）';
   animeBtn.addEventListener('click', () => {
-    void fetch('/dsh-pet-7340/open-anime-dir', { method: 'POST' }).catch(() => undefined);
+    void fetch('/dsh-pet-7340/open-anime-dir', { method: 'POST' })
+      .then(() => notifyFolderOpened()) // 打开文件夹 → 强唤醒动画扫描（15s 高频模式）
+      .catch(() => undefined);
   });
   const row1 = row();
   row1.appendChild(label('大小'));
@@ -445,7 +456,9 @@ function buildMenu(): HTMLDivElement {
   soundDirBtn.textContent = '···';
   soundDirBtn.title = '打开音效文件夹';
   soundDirBtn.addEventListener('click', () => {
-    void fetch('/dsh-pet-7340/open-sound-dir', { method: 'POST' }).catch(() => {});
+    void fetch('/dsh-pet-7340/open-sound-dir', { method: 'POST' })
+      .then(() => notifyFolderOpened()) // 打开文件夹 → 同样强唤醒（用户正在整理文件）
+      .catch(() => {});
   });
   const row2 = row();
   row2.appendChild(label('音效'));
