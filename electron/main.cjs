@@ -29,9 +29,34 @@ const fs = require('fs');
 // ==================== 用户数据目录（独立版专属命名空间） ====================
 // 独立版与 DSH 插件彻底解耦：统一使用「DeepSeek.Pet」作为用户数据母目录，
 // 避免与 DeepSeek Harness（dsh-*）及原作者的 dsh-pet 产生误解或文件冲突。
-// macOS → ~/Library/Application Support/DeepSeek.Pet；Windows → %APPDATA%\DeepSeek.Pet
+// - macOS → ~/Library/Application Support/DeepSeek.Pet
+// - Windows 便携版 → 优先 exe 同级 data/（绿色便携、零 C 盘污染）；
+//   exe 目录只读时回落 %APPDATA%\DeepSeek.Pet，并弹出「数据存储提示」窗请用户确认
 // 注意：必须在 require('./server.cjs') 之前设置——server.cjs 在模块加载期就会解析动画目录。
-app.setPath('userData', path.join(app.getPath('appData'), 'DeepSeek.Pet'));
+function exeDirWritable() {
+  try {
+    const dir = path.dirname(process.execPath);
+    fs.accessSync(dir, fs.constants.W_OK);
+    const probe = path.join(dir, '.dspet-write-test');
+    fs.writeFileSync(probe, 'ok');
+    fs.unlinkSync(probe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+let storageFallback = false; // Windows：exe 目录只读 → 已回落 AppData（需要弹提示确认）
+if (process.platform === 'win32') {
+  if (exeDirWritable()) {
+    app.setPath('userData', path.join(path.dirname(process.execPath), 'data'));
+  } else {
+    storageFallback = true;
+    app.setPath('userData', path.join(app.getPath('appData'), 'DeepSeek.Pet'));
+  }
+} else {
+  app.setPath('userData', path.join(app.getPath('appData'), 'DeepSeek.Pet'));
+}
 migrateAnimeDirName(); // 旧名 DSH.Pet.Anime → anime（同样必须在 require 前，否则目录解析到旧名）
 
 const { startServer } = require('./server.cjs');
@@ -72,6 +97,57 @@ function migrateAnimeDirName() {
   } catch (e) {
     bootLog('anime dir rename error: ' + String(e));
   }
+}
+
+/**
+ * Windows 旧数据迁移：%APPDATA%\DeepSeek.Pet（历史版本落点）→ 当前 userData（exe 同级 data/）。
+ * 仅复制顶层文件（设置/账本/API Key），不覆盖；Electron 缓存不迁。
+ */
+function migrateWinUserData() {
+  if (process.platform !== 'win32') return;
+  try {
+    const oldDir = path.join(app.getPath('appData'), 'DeepSeek.Pet');
+    const newDir = app.getPath('userData');
+    if (oldDir === newDir || !fs.existsSync(oldDir)) return;
+    fs.mkdirSync(newDir, { recursive: true });
+    for (const f of fs.readdirSync(oldDir)) {
+      const sp = path.join(oldDir, f);
+      const dp = path.join(newDir, f);
+      if (fs.statSync(sp).isFile() && !fs.existsSync(dp)) fs.copyFileSync(sp, dp);
+    }
+    bootLog('migrated win user data → ' + newDir);
+  } catch (e) {
+    bootLog('win data migrate error: ' + String(e));
+  }
+}
+
+/**
+ * 数据存储提示窗（Windows：exe 目录只读 → 已回落 AppData）。
+ * 风格参考「特别鸣谢」弹窗；用户点击「确认」= 授权写入 AppData 并关闭本窗。
+ */
+function showFallbackDialog() {
+  return new Promise((resolve) => {
+    const dialogWin = new BrowserWindow({
+      width: 452,
+      height: 300,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      webPreferences: {
+        preload: path.join(__dirname, 'dialog-preload.cjs'),
+        contextIsolation: true,
+      },
+    });
+    ipcMain.once('fallback-confirm', () => {
+      bootLog('storage fallback confirmed by user');
+      if (!dialogWin.isDestroyed()) dialogWin.close();
+      resolve();
+    });
+    dialogWin.on('closed', resolve); // 兜底：被关闭也继续启动
+    void dialogWin.loadFile(path.join(__dirname, 'fallback-dialog.html'));
+  });
 }
 
 /** 启动诊断日志（写到 /tmp/pet-boot.log，便于排查窗口创建问题；无窗口环境也可读） */
@@ -222,7 +298,9 @@ function createTray() {
 app.whenReady()
   .then(async () => {
     bootLog('app ready');
+    if (process.platform === 'win32' && storageFallback) await showFallbackDialog(); // 只读目录回落 AppData：先弹提示确认
     migrateLegacyDirs(); // 旧母目录（dsh-pet）→ DeepSeek.Pet（必须在服务播种前，否则 DIY 文件不会被迁移）
+    migrateWinUserData(); // Windows 旧 %APPDATA% 数据 → exe 同级 data/
     const { port } = await startServer();
     bootLog('server port=', port);
     petWindow = createPetWindow(port);

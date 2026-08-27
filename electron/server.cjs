@@ -149,7 +149,18 @@ function parseJsonc(text) {
  */
 const ANIME_DIR = (() => {
   if (isPackagedApp && process.platform === 'darwin') return path.join(appUserDataDir(), 'anime');
-  if (isPackagedApp && process.platform === 'win32') return path.join(path.dirname(process.execPath), 'motion');
+  if (isPackagedApp && process.platform === 'win32') {
+    const exeDir = path.dirname(process.execPath);
+    const candidate = path.join(exeDir, 'motion');
+    try {
+      // exe 目录只读时回落用户数据目录（与 sound 目录策略一致）
+      fs.mkdirSync(candidate, { recursive: true });
+      fs.accessSync(candidate, fs.constants.W_OK);
+      return candidate;
+    } catch {
+      return path.join(appUserDataDir(), 'motion');
+    }
+  }
   return path.join(USER_DATA, 'anime');
 })();
 

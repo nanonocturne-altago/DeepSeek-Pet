@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>DeepSeekPet 数据存储提示</title>
+    <style>
+      /* 弹窗风格参考「特别鸣谢」弹窗：白色圆角卡片 + 蓝色点缀 */
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { background: transparent; height: 100%; }
+      body {
+        display: flex; align-items: center; justify-content: center;
+        font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        -webkit-app-region: drag; /* 整卡可拖动（按钮区除外） */
+      }
+      .card {
+        width: 400px; padding: 22px 26px 18px;
+        background: rgba(255, 255, 255, 0.98);
+        border-radius: 14px;
+        border: 1px solid rgba(32, 49, 112, 0.18);
+        box-shadow: 0 8px 32px rgba(32, 49, 112, 0.22);
+        color: #203170;
+        text-align: center;
+      }
+      .title { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+      .notice { font-size: 13px; line-height: 1.5; }
+      .quip { font-size: 13px; line-height: 1.6; color: #4a5a94; margin: 6px 0 4px; }
+      .btn {
+        -webkit-app-region: no-drag; /* 按钮可点击 */
+        margin-top: 14px;
+        width: 120px; height: 34px;
+        border: none; border-radius: 8px;
+        background: rgba(32, 49, 112, 0.88);
+        color: #ffffff; font-size: 14px;
+        cursor: pointer;
+        transition: background 0.15s ease, transform 0.08s ease;
+      }
+      .btn:hover { background: #203170; }
+      .btn:active { background: #16224f; transform: scale(0.97); }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="title">📁 数据存储提示</div>
+      <div class="notice">数据存储文件夹是只读的，将把数据存储到 Appdata/DeepSeek.Pet/ 内</div>
+      <div class="quip">"哎呀，客房大门上锁了，我只能和主人睡一间卧室啦，嘿嘿"</div>
+      <button class="btn" id="confirmBtn" type="button">确认</button>
+    </div>
+    <script>
+      // 确认 → 通知主进程（授权写入 AppData）→ 主进程关闭本窗口并继续启动宠物
+      document.getElementById('confirmBtn').addEventListener('click', () => {
+        if (window.petDialog && window.petDialog.confirmFallback) window.petDialog.confirmFallback();
+      });
+    </script>
+  </body>
+</html>
