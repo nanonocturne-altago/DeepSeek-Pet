@@ -323,6 +323,16 @@ export function makePetUI(rt: {
     const [dragging, setDragging] = useState(false);
     // 用户拖拽后的自定义位置（视口比例坐标）；一旦存在即覆盖角落 CSS 定位
     const [customPos, setCustomPos] = useState<null | { rx: number; ry: number }>(null);
+    // 主显示器矩形（窗口坐标空间）：多屏时窗口覆盖整个虚拟桌面，默认角落定位锚定主屏；
+    // 初始回落整窗尺寸，/display-info 返回后修正
+    const [primaryRect, setPrimaryRect] = useState({
+      x: 0,
+      y: 0,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+    const primaryRectRef = useRef(primaryRect);
+    primaryRectRef.current = primaryRect;
     // 初始角落与边距（来自配置；可被容器更新覆盖）
     const [corner, setCorner] = useState<Corner>(cfg.position.corner);
     const [margin, setMargin] = useState({ x: cfg.position.marginX, y: cfg.position.marginY });
@@ -601,9 +611,23 @@ export function makePetUI(rt: {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [balanceTick]);
     // 视口 resize：对 customPos 浅拷贝触发重渲染 → rootStyle 重新贴边钳制（比例坐标不变，
-    // 但 px 位置随视口缩放，越出贴边边界时会被 edgeBounds 钳回安全区）
+    // 但 px 位置随视口缩放，越出贴边边界时会被 edgeBounds 钳回安全区）；
+    // 同时刷新主显示器信息（多屏拓扑变化时默认角落锚点随之修正）
     useEffect(() => {
-      const onResize = () => setCustomPos((prev) => (prev ? { ...prev } : prev));
+      const refreshDisplayInfo = () => {
+        fetch('/dsh-pet-7340/display-info')
+          .then((r) => r.json())
+          .then((d) => {
+            const p = d && d.primary;
+            if (p && typeof p.x === 'number' && typeof p.width === 'number') setPrimaryRect(p);
+          })
+          .catch(() => undefined);
+      };
+      refreshDisplayInfo();
+      const onResize = () => {
+        setCustomPos((prev) => (prev ? { ...prev } : prev));
+        refreshDisplayInfo();
+      };
       window.addEventListener('resize', onResize);
       return () => window.removeEventListener('resize', onResize);
     }, []);
@@ -779,8 +803,9 @@ export function makePetUI(rt: {
       if (cp) return cp.rx * window.innerWidth;
       const rootEl = rootRef.current;
       if (rootEl) return rootEl.getBoundingClientRect().left + halfW;
-      // 无 DOM 时的保守回落：统一贴边边界
-      return window.innerWidth - EDGE_PAD - halfW + EDGE_M_R * eff;
+      // 无 DOM 时的保守回落：主显示器统一贴边边界
+      const pr = primaryRectRef.current;
+      return pr.x + pr.width - EDGE_PAD - halfW + EDGE_M_R * eff;
     };
     /** 当前中心点 y（px）：移动只走水平线，y 仅作起点/全程记录 */
     const currentCenterY = () => {
@@ -788,7 +813,8 @@ export function makePetUI(rt: {
       if (cp) return cp.ry * window.innerHeight;
       const rootEl = rootRef.current;
       if (rootEl) return rootEl.getBoundingClientRect().top + halfH;
-      return window.innerHeight - 20 - halfH;
+      const pr = primaryRectRef.current;
+      return pr.y + pr.height - 20 - halfH;
     };
 
     /**
@@ -1032,7 +1058,8 @@ export function makePetUI(rt: {
     // 舞台样式：常态下移 bottomPad 做脚底对齐；拖拽中 transform:none 跟手移动
     const stageStyle = dragging ? { transform: 'none' } : { transform: 'translateY(' + bottomPad + 'px)' };
     // root 定位样式：有 customPos（拖拽过）→ 按比例坐标算 left/top 并经 edgeBounds 钳制贴边；
-    // 无 customPos → 交由 CSS 角落规则定位
+    // 无 customPos → 按配置角落定位，但锚定**主显示器**（多屏时窗口覆盖整个虚拟桌面，
+    // 直接套 CSS 角落规则会落到联合区域边缘/副屏上）
     const rootStyle = customPos
       ? (() => {
           const rx = customPos.rx;
@@ -1042,8 +1069,17 @@ export function makePetUI(rt: {
           const top = Math.min(Math.max(ry * window.innerHeight - halfH, b.minTop), b.maxTop);
           return { left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto' };
         })()
-      : // 已知坑：DSH 的 jsx 工厂 h 不接受 null props —— 无内联样式时必须传 {}（而非 null）
-        {};
+      : (() => {
+          const pr = primaryRectRef.current;
+          const stageW = eff;
+          const stageH = (eff * 9) / 16;
+          const mx = margin.x;
+          const my = margin.y;
+          const left =
+            corner === 'top-left' || corner === 'bottom-left' ? pr.x + mx : pr.x + pr.width - mx - stageW;
+          const top = corner === 'top-left' || corner === 'top-right' ? pr.y + my : pr.y + pr.height - my - stageH;
+          return { left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto' };
+        })();
     // 双缓冲视频公共属性：静音 + 内联播放 + 自动播放（浏览器自动播放策略要求 muted）
     const commonVideoProps = { muted: true, playsInline: true, autoPlay: true, title: 'DeepSeek娘' };
     // 命中层 props：HIT_BOX 是 thumb 640×360 像素坐标，换算为舞台百分比定位；点击/拖拽事件直接绑在命中层上

@@ -54,6 +54,15 @@ const USER_DATA =
   process.env.DSH_PET_USER_DATA ||
   (electronApp ? electronApp.getPath('userData') : path.join(os.homedir(), '.dsh', 'dsh-pet'));
 
+/**
+ * 显示器信息提供者（由 main.cjs 注册）：返回主显示器在宠物窗口坐标空间中的矩形。
+ * 多屏场景窗口覆盖整个虚拟桌面，客户端据此把「默认角落定位」锚定在主屏上。
+ */
+let displayInfoProvider = null;
+function setDisplayInfoProvider(fn) {
+  displayInfoProvider = fn;
+}
+
 /** 便携 exe 的真实所在目录：electron-builder 便携包运行时会自解压到 %TEMP%，
  *  process.execPath 指向临时目录；PORTABLE_EXECUTABLE_DIR 才是用户 exe 所在处
  * （解包目录分发/未打包时该变量不存在，回落 execPath 目录） */
@@ -825,6 +834,12 @@ function startServer() {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'method not allowed' });
           return sendJson(res, 200, await openSoundDir());
         }
+        // 主显示器信息（多屏支持：宠物默认角落定位锚定主屏，拖拽/漫游可跨越整个虚拟桌面）
+        if (rest === 'display-info') {
+          const info = displayInfoProvider ? displayInfoProvider() : null;
+          if (!info) return sendJson(res, 200, { primary: { x: 0, y: 0, width: 800, height: 600 } });
+          return sendJson(res, 200, info);
+        }
         // 动画文件夹变化事件流（SSE）：fs.watch 发现文件增删 → 推送 changed，客户端即时重扫
         if (rest === 'anime-events') {
           res.writeHead(200, {
@@ -905,4 +920,4 @@ function startServer() {
   });
 }
 
-module.exports = { startServer };
+module.exports = { startServer, setDisplayInfoProvider };

@@ -66,7 +66,7 @@ if (process.platform === 'win32') {
 }
 migrateAnimeDirName(); // 旧名 DSH.Pet.Anime → anime（同样必须在 require 前，否则目录解析到旧名）
 
-const { startServer } = require('./server.cjs');
+const { startServer, setDisplayInfoProvider } = require('./server.cjs');
 
 /** 把历史版本的旧母目录数据迁入新目录（仅迁自有子目录，Electron 自身缓存不迁） */
 function migrateLegacyDirs() {
@@ -170,21 +170,47 @@ function bootLog(...args) {
 let petWindow = null;
 
 /** 创建宠物窗口（透明置顶全工作区） */
+/** 虚拟桌面联合区域：所有物理显示器的包围盒（宠物可在多屏间自由拖动/漫游） */
+function virtualDesktopBounds() {
+  const ds = screen.getAllDisplays();
+  if (ds.length === 0) return { x: 0, y: 0, width: 1280, height: 800 };
+  let x1 = Infinity;
+  let y1 = Infinity;
+  let x2 = -Infinity;
+  let y2 = -Infinity;
+  for (const d of ds) {
+    const b = d.bounds; // 用完整 bounds（含任务栏/菜单栏区域）：透明覆盖层需要覆盖整块屏幕
+    x1 = Math.min(x1, b.x);
+    y1 = Math.min(y1, b.y);
+    x2 = Math.max(x2, b.x + b.width);
+    y2 = Math.max(y2, b.y + b.height);
+  }
+  return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
+}
+
+/** 主显示器在窗口坐标空间中的矩形（供渲染页把默认角落定位锚定在主屏） */
+function computeDisplayInfo() {
+  try {
+    const vb = virtualDesktopBounds();
+    const p = screen.getPrimaryDisplay().bounds;
+    return { primary: { x: p.x - vb.x, y: p.y - vb.y, width: p.width, height: p.height } };
+  } catch {
+    return null;
+  }
+}
+setDisplayInfoProvider(computeDisplayInfo);
+
 function createPetWindow(port) {
-  // 显示器选择：远程控制（向日葵等）会注入小尺寸虚拟显示器并可能成为 primary，
-  // 导致窗口建到用户看不到的屏幕上。策略：选 workArea 面积最大的显示器（物理屏），
-  // 后续版本再做多屏各开一个窗口。
-  const displays = screen.getAllDisplays();
-  const target = displays.reduce((best, d) =>
-    d.workArea.width * d.workArea.height > best.workArea.width * best.workArea.height ? d : best,
-  );
-  const { workArea } = target;
-  bootLog('displays=', displays.length, 'target workArea=', JSON.stringify(workArea));
+  // 多显示器支持：窗口覆盖所有显示器的联合区域（虚拟桌面），
+  // 宠物在该窗口内移动即等于在任意屏幕间拖动/漫游；
+  // 显示器插拔/远程会话变化时在 display 事件里重新贴合联合区域并让客户端重新钳制位置。
+  const vb = virtualDesktopBounds();
+  bootLog('virtual desktop bounds=', JSON.stringify(vb));
   const win = new BrowserWindow({
-    x: workArea.x,
-    y: workArea.y,
-    width: workArea.width,
-    height: workArea.height,
+    x: vb.x,
+    y: vb.y,
+    width: vb.width,
+    height: vb.height,
     transparent: true, // 窗口背景全透明：只显示宠物动画像素
     backgroundColor: '#00000000',
     frame: false, // 无边框
@@ -343,20 +369,17 @@ app.whenReady()
       if (petWindow && !petWindow.isDestroyed()) petWindow.show();
     });
 
-    // 显示器拓扑变化（远程连接/断开、插拔外接屏）：重新绑定到面积最大的显示器
-    const repositionToLargestDisplay = () => {
+    // 显示器拓扑变化（远程连接/断开、插拔外接屏）：重新贴合虚拟桌面联合区域
+    const refitVirtualDesktop = () => {
       if (!petWindow || petWindow.isDestroyed()) return;
-      const ds = screen.getAllDisplays();
-      const t = ds.reduce((b, d) =>
-        d.workArea.width * d.workArea.height > b.workArea.width * b.workArea.height ? d : b,
-      );
-      const wa = t.workArea;
-      bootLog('reposition: displays=', ds.length, 'workArea=', JSON.stringify(wa));
-      petWindow.setBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height });
+      const vb = virtualDesktopBounds();
+      bootLog('refit virtual desktop: displays=', screen.getAllDisplays().length, 'bounds=', JSON.stringify(vb));
+      petWindow.setBounds({ x: vb.x, y: vb.y, width: vb.width, height: vb.height });
+      // setBounds 触发渲染页 resize → 宠物位置自动重新钳制回新边界内
     };
-    screen.on('display-added', repositionToLargestDisplay);
-    screen.on('display-removed', repositionToLargestDisplay);
-    screen.on('display-metrics-changed', repositionToLargestDisplay);
+    screen.on('display-added', refitVirtualDesktop);
+    screen.on('display-removed', refitVirtualDesktop);
+    screen.on('display-metrics-changed', refitVirtualDesktop);
   })
   .catch((err) => {
     bootLog('BOOT_ERROR', String((err && err.stack) || err));
