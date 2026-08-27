@@ -194,8 +194,8 @@ export function makePetUI(rt: {
           if (!alive) return;
           setAnimeDir((prev) => ({
             idle: Array.isArray(data.idle) && data.idle.length ? data.idle : prev.idle,
-            turn: Array.isArray(data.turn) && data.turn.length ? data.turn : prev.turn,
-            drag: Array.isArray(data.drag) && data.drag.length ? data.drag : prev.drag,
+            turn: Array.isArray(data['转身']) && data['转身'].length ? data['转身'] : prev.turn,
+            drag: Array.isArray(data['拖曳']) && data['拖曳'].length ? data['拖曳'] : prev.drag,
           }));
         } catch {
           /* 服务未就绪等瞬时故障：保持现有清单（下一次轮询重试） */

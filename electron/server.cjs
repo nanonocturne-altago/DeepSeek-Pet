@@ -141,11 +141,11 @@ function buildAnimeFolderMap() {
       for (const n of list || []) map.set(String(n), folder);
     };
     put(an.idle, 'idle');
-    put(an.turn, 'turn');
-    put(an.drag, 'drag');
-    put(an.clicks, 'clicks');
-    put(an.events && an.events.balance, 'balance');
-    put((an.moves && an.moves.actions || []).map((a) => a.name), 'moves');
+    put(an.turn, '转身');
+    put(an.drag, '拖曳');
+    put(an.clicks, '点击');
+    put(an.events && an.events.balance, '余额');
+    put((an.moves && an.moves.actions || []).map((a) => a.name), '移动');
     for (const cat of an.categories || []) put(cat.actions, String(cat.id));
   } catch (e) {
     console.error('[server] 动画分类映射构建失败（回退全部指向 webm 根）', e);
@@ -153,7 +153,30 @@ function buildAnimeFolderMap() {
   return map;
 }
 
-/** 首次启动：把包内动画按分类播种进用户动画目录（缺文件才复制，不覆盖用户改动） */
+/**
+ * 旧版英文文件夹 → 新中文名迁移（在播种前执行）：
+ * 老用户已播种过英文目录，直接改代码会导致重新播种一份中文副本（旧目录残留、空间双倍）。
+ * 迁移规则：旧目录存在且新目录不存在 → 整体改名（保留用户 DIY 增删的文件）。
+ */
+const ANIME_FOLDER_RENAME = [
+  ['turn', '转身'],
+  ['drag', '拖曳'],
+  ['clicks', '点击'],
+  ['balance', '余额'],
+  ['moves', '移动'],
+];
+function migrateAnimeFolders() {
+  for (const [oldName, newName] of ANIME_FOLDER_RENAME) {
+    const oldPath = path.join(ANIME_DIR, oldName);
+    const newPath = path.join(ANIME_DIR, newName);
+    try {
+      if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) fs.renameSync(oldPath, newPath);
+    } catch (e) {
+      console.error('[server] 动画目录迁移失败', oldName, '→', newName, e);
+    }
+  }
+}
+
 function seedAnimeDirs() {
   try {
     for (const [name, folder] of ANIME_FOLDER_MAP) {
@@ -602,6 +625,7 @@ function soundSetFromUrl(url) {
 /** 启动服务器：返回 { port }（随机可用端口，由 main.cjs 注入页面地址） */
 function startServer() {
   return new Promise((resolve) => {
+    migrateAnimeFolders();
     seedBuiltinSounds();
     seedAnimeDirs();
     const server = http.createServer(async (req, res) => {
