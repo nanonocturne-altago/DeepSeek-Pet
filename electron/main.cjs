@@ -279,6 +279,15 @@ ipcMain.on('pet-foreground', (_event, on) => {
   applyForeground();
 });
 
+// 键盘焦点开关：默认 focusable:false（宠物不打断用户工作）；
+// API Key 弹窗等需要键盘输入的界面打开时临时开启并聚焦，关闭后恢复不抢焦点
+ipcMain.on('pet-focusable', (_event, on) => {
+  if (!petWindow || petWindow.isDestroyed()) return;
+  petWindow.setFocusable(!!on);
+  if (on) petWindow.focus();
+  bootLog('focusable=', !!on);
+});
+
 // 状态查询（菜单打开时同步按钮高亮）
 ipcMain.handle('pet-state', () => ({ dock: dockVisible, foreground: foregroundOn }));
 

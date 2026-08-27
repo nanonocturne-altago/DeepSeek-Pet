@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('petDesktop', {
   setInteractive: (interactive) => ipcRenderer.send('pet-interactive', interactive),
   setDockVisible: (show) => ipcRenderer.send('pet-dock', show),
   setForeground: (on) => ipcRenderer.send('pet-foreground', on),
+  setFocusable: (on) => ipcRenderer.send('pet-focusable', on),
   getState: () => ipcRenderer.invoke('pet-state'),
   platform: process.platform,
 });

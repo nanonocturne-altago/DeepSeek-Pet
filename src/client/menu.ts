@@ -767,6 +767,13 @@ export function openApiPopup(): void {
   if (!apiBox) return;
   apiBox.classList.add('dsh-pet-apibox-open');
   apiOpen = true;
+  // 输入框需要键盘焦点：宠物窗口默认 focusable:false（不打断用户工作），
+  // 打开弹窗时临时开启焦点并聚焦窗口，让输入/粘贴正常可用（关闭时恢复）
+  if (typeof window !== 'undefined' && window.petDesktop) window.petDesktop.setFocusable(true);
+  // 等弹窗过渡开始后聚焦输入框
+  window.setTimeout(() => {
+    if (apiOpen && apiInput) apiInput.focus();
+  }, 80);
 }
 
 /**
@@ -780,6 +787,8 @@ function closeApiPopup(): void {
   // 复位：清空输入与「已更新」状态，下次打开是全新状态
   if (apiInput) apiInput.value = '';
   resetApiUpdateBtn();
+  // 恢复不抢焦点的宠物常态
+  if (typeof window !== 'undefined' && window.petDesktop) window.petDesktop.setFocusable(false);
 }
 
 /**

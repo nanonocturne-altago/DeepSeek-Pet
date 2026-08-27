@@ -559,7 +559,8 @@ export function makePetUI(rt: {
         // 双击刷新却缺 API Key：自动弹出设置框引导填写（仅用户主动触发的刷新；周期轮询不打扰）
         if (manualRefreshRef.current && balance && balance.reason === 'credential-missing') {
           manualRefreshRef.current = false;
-          openApiPopup();
+          openApiPopup(); // 自动弹设置框引导填写
+          setBubbleOn(true); // 同时亮气泡提示（气泡文本组件会显示缺 key 的友好文案）
         }
         return;
       }
