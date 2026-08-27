@@ -193,7 +193,7 @@ export function makePetUI(rt: {
           const data = (await r.json()) as Record<string, string[]>;
           if (!alive) return;
           setAnimeDir((prev) => ({
-            idle: Array.isArray(data.idle) && data.idle.length ? data.idle : prev.idle,
+            idle: Array.isArray(data['待机']) && data['待机'].length ? data['待机'] : prev.idle,
             turn: Array.isArray(data['转身']) && data['转身'].length ? data['转身'] : prev.turn,
             drag: Array.isArray(data['拖曳']) && data['拖曳'].length ? data['拖曳'] : prev.drag,
           }));

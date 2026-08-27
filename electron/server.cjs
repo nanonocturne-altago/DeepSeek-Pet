@@ -140,7 +140,7 @@ function buildAnimeFolderMap() {
     const put = (list, folder) => {
       for (const n of list || []) map.set(String(n), folder);
     };
-    put(an.idle, 'idle');
+    put(an.idle, '待机');
     put(an.turn, '转身');
     put(an.drag, '拖曳');
     put(an.clicks, '点击');
@@ -159,6 +159,7 @@ function buildAnimeFolderMap() {
  * 迁移规则：旧目录存在且新目录不存在 → 整体改名（保留用户 DIY 增删的文件）。
  */
 const ANIME_FOLDER_RENAME = [
+  ['idle', '待机'],
   ['turn', '转身'],
   ['drag', '拖曳'],
   ['clicks', '点击'],
