@@ -54,6 +54,14 @@ const USER_DATA =
   process.env.DSH_PET_USER_DATA ||
   (electronApp ? electronApp.getPath('userData') : path.join(os.homedir(), '.dsh', 'dsh-pet'));
 
+/** 便携 exe 的真实所在目录：electron-builder 便携包运行时会自解压到 %TEMP%，
+ *  process.execPath 指向临时目录；PORTABLE_EXECUTABLE_DIR 才是用户 exe 所在处
+ * （解包目录分发/未打包时该变量不存在，回落 execPath 目录） */
+const PORTABLE_DIR =
+  process.platform === 'win32' && process.env.PORTABLE_EXECUTABLE_DIR
+    ? process.env.PORTABLE_EXECUTABLE_DIR
+    : path.dirname(process.execPath);
+
 /**
  * 旧插件共享目录（~/.dsh/dsh-pet）→ 新独立目录的数据迁移：
  * 仅复制顶层文件（widget-settings.json / 账本 / api-key.json 等），不覆盖新目录已有文件；
@@ -150,8 +158,7 @@ function parseJsonc(text) {
 const ANIME_DIR = (() => {
   if (isPackagedApp && process.platform === 'darwin') return path.join(appUserDataDir(), 'anime');
   if (isPackagedApp && process.platform === 'win32') {
-    const exeDir = path.dirname(process.execPath);
-    const candidate = path.join(exeDir, 'motion');
+    const candidate = path.join(PORTABLE_DIR, 'motion');
     try {
       // exe 目录只读时回落用户数据目录（与 sound 目录策略一致）
       fs.mkdirSync(candidate, { recursive: true });
@@ -258,12 +265,11 @@ const LEDGER_PATH = path.join(USER_DATA, '.dshw-usage.json');
 function resolveSoundDir() {
   if (!isPackagedApp) return path.join(USER_DATA, 'sound'); // 开发模式
   if (process.platform === 'win32') {
-    const exeDir = path.dirname(process.execPath);
-    const candidate = path.join(exeDir, 'sound');
+    const candidate = path.join(PORTABLE_DIR, 'sound');
     try {
       fs.mkdirSync(candidate, { recursive: true });
       fs.accessSync(candidate, fs.constants.W_OK);
-      return candidate; // exe 同目录可写 → 就用它
+      return candidate; // exe 同目录可写 → 就用它（便携包场景 PORTABLE_DIR 才是真实 exe 所在）
     } catch {
       /* exe 目录只读（如被放在受保护位置）→ 回落到用户数据目录 */
     }

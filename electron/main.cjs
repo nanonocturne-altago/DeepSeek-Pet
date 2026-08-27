@@ -33,9 +33,16 @@ const fs = require('fs');
 // - Windows 便携版 → 优先 exe 同级 data/（绿色便携、零 C 盘污染）；
 //   exe 目录只读时回落 %APPDATA%\DeepSeek.Pet，并弹出「数据存储提示」窗请用户确认
 // 注意：必须在 require('./server.cjs') 之前设置——server.cjs 在模块加载期就会解析动画目录。
+// 便携 exe 的真实所在目录：自解压便携包运行时 execPath 指向 %TEMP%，
+// PORTABLE_EXECUTABLE_DIR 才是用户 exe 所在处（解包目录分发/未打包时不存在，回落 execPath 目录）
+const PORTABLE_DIR =
+  process.platform === 'win32' && process.env.PORTABLE_EXECUTABLE_DIR
+    ? process.env.PORTABLE_EXECUTABLE_DIR
+    : path.dirname(process.execPath);
+
 function exeDirWritable() {
   try {
-    const dir = path.dirname(process.execPath);
+    const dir = PORTABLE_DIR;
     fs.accessSync(dir, fs.constants.W_OK);
     const probe = path.join(dir, '.dspet-write-test');
     fs.writeFileSync(probe, 'ok');
@@ -49,7 +56,7 @@ function exeDirWritable() {
 let storageFallback = false; // Windows：exe 目录只读 → 已回落 AppData（需要弹提示确认）
 if (process.platform === 'win32') {
   if (exeDirWritable()) {
-    app.setPath('userData', path.join(path.dirname(process.execPath), 'data'));
+    app.setPath('userData', path.join(PORTABLE_DIR, 'data'));
   } else {
     storageFallback = true;
     app.setPath('userData', path.join(app.getPath('appData'), 'DeepSeek.Pet'));

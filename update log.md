@@ -43,6 +43,8 @@
 - **数据母目录更名 dsh-pet → DeepSeek.Pet**：独立版与 DeepSeek Harness 彻底解耦——macOS 用户数据目录 `~/Library/Application Support/DeepSeek.Pet`、Windows `%APPDATA%\DeepSeek.Pet`；首次启动自动迁移旧目录（动画/音效/设置/账本/API Key），插件版继续使用原目录互不干扰
 - **Windows 绿色便携存储**：用户数据（设置/账本/API Key + Electron 缓存）改为 exe 同级 `data/` 文件夹——零 C 盘污染、整个文件夹拷走即迁移、删除即卸载；exe 位于只读目录时自动回落 `%APPDATA%\DeepSeek.Pet` 并弹出「数据存储提示」Appdata文件夹授权确认窗。
 - DIY 随机池：**待机 / 转身 / 拖曳 三类动画改为按文件夹内实际文件数纯随机**（1 个文件=100%，N 个=各 1/N）；文件夹被清空时回落内置名单保证有动画可播
+- **Windows 分发形态改为解包 zip**：弃用自解压单 exe（下载者无法看到文件结构、易被误认为可疑程序），改为解包文件夹压缩包——解压即可看到 exe 与全部资源文件；首次运行在 exe 同级自动创建 motion/、sound/、data/（绿色便携、零 C 盘污染）
+- 修复：便携 exe 自解压临时目录 bug——旧版运行时把用户数据/动画/音效全部播种到 %TEMP% 随机文件夹（程序退出即被系统清理丢失）；现用 PORTABLE_EXECUTABLE_DIR 定位用户 exe 真实所在目录，数据全部落在 exe 同级
 - **动画文件夹事件驱动监听**（fs.watch + SSE 推送）：文件增删改名即时生效（约 1 秒内自动重扫，无时限、无盲区，从任意方式管理文件夹都触发）；零轮询、零权限；服务器 500ms 防抖 + 客户端 300ms 防抖合并连发事件；每小时兜底扫描 1 次（防网络盘等监听失效场景）；点「自定动作 / ···」后立即扫描一次。已取代早期「点击按钮后 15 秒 × 6 次扫描」的定时强唤醒方案（其存在思考超时后不生效、手动打开文件夹不触发的盲区）
 - 动画文件夹名统一为中文：`turn→转身、drag→拖曳、clicks→点击、balance→余额、moves→移动、idle→待机`，软件内外链接同步更新；旧版英文目录首次启动自动改名迁移（保留用户 DIY 文件，不重复播种）
 - **GIF/APNG/静态 PNG 动图支持**：DIY 文件夹可直接放入 GIF/APNG/PNG 文件参与随机池（与 webm 混用）；渲染按扩展名分派（视频双槽 ↔ 图片双槽，交叉淡入淡出一致）；单次播放的结束信号用「文件时长解析」（GIF 读 GCE 帧延迟、APNG 读 fcTL 帧延迟，解析失败回落 3 秒），时长按文件名缓存；DIY 自定义文件名经反向扫描定位，无需修改配置。注意：GIF 为 1-bit 透明度（毛边），APNG 支持完整透明度，追求画质请用 APNG/webm
@@ -61,8 +63,8 @@
 | 文件 | 说明 |
 | --- | --- |
 | `DeepSeekPet-0.2.1-mac-arm64.dmg` | macOS（Apple 芯片）安装包，本地自签证书签名 |
-| `DeepSeekPet-0.2.1-win-x64.exe` | Windows x64 便携版（Intel/AMD，主流机型） |
-| `DeepSeekPet-0.2.1-win-arm64.exe` | Windows ARM64 便携版（骁龙机型） |
+| `DeepSeekPet-0.2.1-win-x64.zip` | Windows x64 便携压缩包（Intel/AMD，主流机型）——解压即用，文件夹结构一目了然 |
+| `DeepSeekPet-0.2.1-win-arm64.zip` | Windows ARM64 便携压缩包（骁龙机型） |
 
 ### ⚠️ 已知说明
 

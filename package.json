@@ -69,7 +69,7 @@
     "build:app": "esbuild electron/renderer/main.ts --bundle --format=iife --outfile=dist/renderer.js",
     "start:app": "npm run build:app && electron electron/main.cjs",
     "dist:mac": "npm run build:app && electron-builder --mac dmg && mkdir -p ../pack_output/MAC && cp -f release/*.dmg ../pack_output/MAC/",
-    "dist:win": "npm run build:app && electron-builder --win portable --x64 && mkdir -p ../pack_output/WIN && cp -f release/*.exe ../pack_output/WIN/",
+    "dist:win": "npm run build:app && electron-builder --win dir --x64 && node scripts/pack-win-zip.cjs x64",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
