@@ -250,24 +250,25 @@ export function makePetUI(rt: {
     useEffect(() => {
       animeDirRef.current = animeDir;
     }, [animeDir]);
-    // 挂载时立即扫描一次，之后自适应调度：
-    // - 正常模式：每小时扫 1 次（只比对各文件夹文件数量，无变化则维持 1 小时周期）
-    // - 强唤醒模式：用户点击「自定动作 / ···」打开文件夹后进入，每 15s 扫 1 次；
-    //   连续 6 次无数量变化 → 回到正常模式（期间有变化立即应用并重新计数）
+    // 挂载时立即扫描一次，之后事件驱动刷新：
+    // - 服务器 fs.watch 监听动画文件夹，文件增删 → SSE 推送 → 立即重扫（无时限、无盲区，
+    //   用户从任意方式管理文件夹都生效；500ms 防抖合并连发事件）
+    // - 每小时兜底扫描 1 次（防网络盘等 fs.watch 不可靠的场景）
+    // - 点击「自定动作 / ···」后立即扫一次（打开文件夹后的即时反馈）
     useEffect(() => {
       let alive = true;
       let timer: number | null = null;
-      let mode: 'normal' | 'active' = 'normal';
-      let streak = 0; // 强唤醒模式下连续无变化扫描次数
+      let debounce: number | null = null;
+      let es: EventSource | null = null;
       let lastCounts: Record<string, number> | null = null; // 上次各文件夹文件数（null=尚未扫描）
 
-      /** 拉取一次动画文件夹清单；返回是否有数量变化（首次视为变化） */
-      const refresh = async (): Promise<boolean> => {
+      /** 拉取一次动画文件夹清单；仅在数量有变化时应用（首次视为变化） */
+      const refresh = async (): Promise<void> => {
         try {
           const r = await fetch('/dsh-pet-7340/anime-files');
-          if (!r.ok) return false;
+          if (!r.ok) return;
           const data = (await r.json()) as Record<string, string[]>;
-          if (!alive) return false;
+          if (!alive) return;
           const counts: Record<string, number> = {};
           for (const k of Object.keys(data)) counts[k] = Array.isArray(data[k]) ? data[k].length : 0;
           const changed = lastCounts === null || JSON.stringify(counts) !== JSON.stringify(lastCounts);
@@ -279,45 +280,39 @@ export function makePetUI(rt: {
               drag: Array.isArray(data['拖曳']) && data['拖曳'].length ? data['拖曳'] : prev.drag,
             }));
           }
-          return changed;
         } catch {
-          /* 服务未就绪等瞬时故障：保持现有清单（下一次扫描重试） */
-          return false;
+          /* 服务未就绪等瞬时故障：保持现有清单（下一次事件/兜底扫描重试） */
         }
       };
 
-      /** 按当前模式调度下一次扫描 */
-      const schedule = () => {
-        if (timer !== null) window.clearTimeout(timer);
-        timer = window.setTimeout(async () => {
-          if (!alive) return;
-          const changed = await refresh();
-          if (mode === 'active') {
-            streak = changed ? 0 : streak + 1;
-            if (streak >= 6) {
-              mode = 'normal'; // 连续 6 次无变化：降频回正常模式
-              streak = 0;
-            }
-          }
-          schedule();
-        }, mode === 'active' ? 15_000 : 3_600_000);
-      };
-
-      /** 强唤醒：进入 15s 高频模式并立即扫描一次 */
-      const wake = () => {
-        mode = 'active';
-        streak = 0;
-        void refresh();
-        schedule();
+      /** SSE 变化推送 → 300ms 防抖后重扫（与服务器 500ms 防抖叠加，多事件合并为一次） */
+      const onAnimeEvent = () => {
+        if (debounce !== null) window.clearTimeout(debounce);
+        debounce = window.setTimeout(() => {
+          debounce = null;
+          void refresh();
+        }, 300);
       };
 
       void refresh(); // 启动时强制扫描 1 次
-      schedule();
-      setFolderOpenedListener(wake); // 「自定动作 / ···」打开文件夹后强唤醒
+      try {
+        es = new EventSource('/dsh-pet-7340/anime-events');
+        es.onmessage = onAnimeEvent;
+      } catch {
+        /* 不支持 SSE 的环境：每小时兜底扫描仍可用 */
+      }
+      timer = window.setTimeout(function hourly() {
+        void refresh(); // 每小时兜底（fs.watch 失效场景如网络盘）
+        if (alive) timer = window.setTimeout(hourly, 3_600_000);
+      }, 3_600_000);
+      setFolderOpenedListener(() => void refresh()); // 打开文件夹 → 立即扫一次
+
       return () => {
         alive = false;
         setFolderOpenedListener(null);
         if (timer !== null) window.clearTimeout(timer);
+        if (debounce !== null) window.clearTimeout(debounce);
+        if (es) es.close();
       };
     }, []);
     // 是否「单次播放」：true = 播完触发 handleEnded 接续下一段；false = 循环播放（如 idle 呼吸）

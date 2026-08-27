@@ -671,6 +671,42 @@ function soundSetFromUrl(url) {
   }
 }
 
+// ==================== 动画文件夹文件系统监听（fs.watch → SSE 推送） ====================
+/** SSE 订阅客户端集合（响应对象；连接断开自动移除） */
+const animeWatchers = new Set();
+
+/**
+ * 向所有 SSE 客户端广播「动画文件夹有变化」事件。
+ * fs.watch 一次操作可能产生多个事件，这里做 500ms 防抖：静默 500ms 后才推送一次。
+ */
+let animeBroadcastTimer = null;
+function animeChanged() {
+  if (animeBroadcastTimer !== null) clearTimeout(animeBroadcastTimer);
+  animeBroadcastTimer = setTimeout(() => {
+    animeBroadcastTimer = null;
+    for (const res of animeWatchers) {
+      try {
+        res.write('data: changed\n\n');
+      } catch {
+        /* 客户端已断开：忽略写失败 */
+      }
+    }
+  }, 500);
+}
+
+/**
+ * 启动动画文件夹监听（fs.watch 递归：文件增删改名即时感知，无轮询、无额外权限）。
+ * macOS 走 FSEvents、Windows 走 ReadDirectoryChangesW，均为系统原生事件。
+ * 注意：网络盘/部分移动介质可能不投递事件——客户端另有每小时兜底扫描。
+ */
+function watchAnimeDir() {
+  try {
+    fs.watch(ANIME_DIR, { recursive: true }, (_event, _name) => animeChanged());
+  } catch {
+    /* 目录监听失败（如网络盘）：客户端每小时兜底扫描仍可生效 */
+  }
+}
+
 /** 启动服务器：返回 { port }（随机可用端口，由 main.cjs 注入页面地址） */
 function startServer() {
   return new Promise((resolve) => {
@@ -678,6 +714,7 @@ function startServer() {
     migrateAnimeFolders();
     seedBuiltinSounds();
     seedAnimeDirs();
+    watchAnimeDir(); // 动画文件夹文件系统监听（播种完成后才挂接，避免自触发）
     const server = http.createServer(async (req, res) => {
       try {
         const url = new URL(req.url || '/', 'http://localhost');
@@ -781,6 +818,18 @@ function startServer() {
         if (rest === 'open-sound-dir') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'method not allowed' });
           return sendJson(res, 200, await openSoundDir());
+        }
+        // 动画文件夹变化事件流（SSE）：fs.watch 发现文件增删 → 推送 changed，客户端即时重扫
+        if (rest === 'anime-events') {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+          });
+          res.write('retry: 3000\n\n');
+          animeWatchers.add(res);
+          req.on('close', () => animeWatchers.delete(res));
+          return;
         }
         // 动画文件夹文件清单（DIY 随机池：客户端按文件夹内实际文件纯随机选取）
         if (rest === 'anime-files') {
