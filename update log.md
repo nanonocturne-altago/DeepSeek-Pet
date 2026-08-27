@@ -64,6 +64,8 @@
 
 ### 📦 发布产物
 
+- **GitHub Release v0.2.1 已发布（macOS 先行版）**：https://github.com/nanonocturne-altago/DeepSeek-Pet/releases/tag/v0.2.1 —— Windows zip（x64/arm64）本地实测通过后补充上传
+
 | 文件 | 说明 |
 | --- | --- |
 | `DeepSeekPet-0.2.1-mac-arm64.dmg` | macOS（Apple 芯片）安装包，本地自签证书签名 |
