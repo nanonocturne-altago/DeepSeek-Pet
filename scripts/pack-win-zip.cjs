@@ -34,7 +34,7 @@ execFileSync('ditto', ['-c', '-k', '--keepParent', stageDir, zipPath], { stdio: 
 fs.rmSync(stageDir, { recursive: true, force: true });
 console.log(`[pack-win-zip] 已生成 ${zipName}`);
 
-const outDir = path.join(root, '..', 'pack_output', 'WIN');
+const outDir = path.join(root, '..', '..', 'pack_output', 'WIN');
 fs.mkdirSync(outDir, { recursive: true });
 fs.copyFileSync(zipPath, path.join(outDir, zipName));
 console.log(`[pack-win-zip] 已复制到 ${outDir}`);

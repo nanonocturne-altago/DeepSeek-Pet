@@ -68,7 +68,7 @@
     "prepare:mov": "node scripts/prepare.js mov",
     "build:app": "esbuild electron/renderer/main.ts --bundle --format=iife --outfile=dist/renderer.js",
     "start:app": "npm run build:app && electron electron/main.cjs",
-    "dist:mac": "npm run build:app && electron-builder --mac dmg && mkdir -p ../pack_output/MAC && cp -f release/*.dmg ../pack_output/MAC/",
+    "dist:mac": "npm run build:app && electron-builder --mac dmg && mkdir -p ../../pack_output/MAC && cp -f release/*.dmg ../../pack_output/MAC/",
     "dist:win": "npm run build:app && electron-builder --win dir --x64 && node scripts/pack-win-zip.cjs x64",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
