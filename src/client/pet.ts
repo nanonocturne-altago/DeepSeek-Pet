@@ -82,7 +82,9 @@ function playbackExt(): string {
 }
 
 /** 余额气泡展示时长（ms）：定时自动消失，与动画生命周期解耦 */
-const BUBBLE_DURATION_MS = 10 * 1000;
+const BUBBLE_DURATION_MS = 10_000;
+/** 单击响应延迟（ms）：等待可能的双击第二击（系统双击间隔通常 ≤500ms），超时则按单击播 clicks 动画 */
+const SINGLE_CLICK_DELAY_MS = 550;
 
 /** 内联 CSS —— 注入一次（官方插件标准做法）。
  *  层级模型（由外到内）：
@@ -683,27 +685,48 @@ export function makePetUI(rt: {
       }
     };
     /**
-     * 点击（真实点击；拖拽中/刚拖拽结束/按压残留一律忽略）：
-     * 停移动、取消链间隔（点击立即响应）→ 余额宠物弹气泡 + 手动刷新 → 播 clicks 动画（单次）。
+     * 点击分发（单击/双击分离）：
+     * - 单击：延迟 SINGLE_CLICK_DELAY_MS 播随机 clicks 响应动画（等待期间若第二击到达则取消，不播）
+     * - 双击：走 onDoubleClick —— 取消单击定时器，仅触发余额刷新；余额动画由 balanceTick
+     *   effect 按档位播放。避免历史问题：单击立即播 clicks 动画 + 立即刷新余额，余额动画
+     *   返回时掐断 clicks 动画造成「闪烁」。
+     * 双击判定使用浏览器/操作系统原生 dblclick（click 事件 e.detail 计数区分第几击）。
      */
-    const handleClick = () => {
+    const clickTimerRef = useRef<number | null>(null);
+    const handleClick = (e: ReactNS.MouseEvent<HTMLDivElement>) => {
       const d = dragRef.current;
       if (d.active || d.dragging || justDraggedRef.current) return;
+      if (e.detail !== 1) return; // 双击的第二击（detail=2）交由 onDoubleClick 处理
+      if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = window.setTimeout(() => {
+        clickTimerRef.current = null;
+        handleSingleClick();
+      }, SINGLE_CLICK_DELAY_MS);
+    };
+    /** 单击：停移动/取消链间隔 → 播随机 clicks 响应动画（单次） */
+    const handleSingleClick = () => {
       stopMove();
       cancelChainTimer(); // 交互触发：取消动画链间隔（点击立即响应，不等待停顿）
       setOnce(true);
-      // 点击显示余额（移植自插件 A：点击鲸鱼 = 打开气泡 + 手动刷新余额）
-      if (cfg.balanceEnabled) {
-        if (onManualRefresh) onManualRefresh();
-        setBubbleOn(true);
-        if (bubbleTimerRef.current !== null) window.clearTimeout(bubbleTimerRef.current);
-        bubbleTimerRef.current = window.setTimeout(() => setBubbleOn(false), BUBBLE_DURATION_MS);
-      }
       if (!config.animations.clicks.length) return;
       const name = pick(config.animations.clicks);
       console.log('[dsh-pet] ' + new Date().toTimeString().slice(0, 8) + ' pet=' + cfg.id + ' -> [CLICK] ' + name);
       setAnim(name);
     };
+    /** 双击：仅触发余额刷新（余额动画 + 气泡由 balanceTick effect 按档位播放） */
+    const handleDoubleClick = () => {
+      if (clickTimerRef.current !== null) {
+        window.clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
+      stopMove();
+      cancelChainTimer();
+      if (cfg.balanceEnabled && onManualRefresh) onManualRefresh();
+    };
+    // 卸载清理：单击判定定时器（防组件销毁后误触发）
+    useEffect(() => () => {
+      if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
+    }, []);
 
     // ---- 统一贴边边界（所有动画共用固定边距+安全垫：位置永不因动画切换而跳动）----
     // 与 tryMove 的左右边界（centerX 口径）不同，这里是 root 层 left/top 口径的钳制区间：
@@ -750,6 +773,7 @@ export function makePetUI(rt: {
         height: ((HIT_BOX.y1 - HIT_BOX.y0) / 360) * 100 + '%',
       },
       onClick: handleClick,
+      onDoubleClick: handleDoubleClick,
       onPointerDown: handlePointerDown,
       onPointerMove: handlePointerMove,
       onPointerUp: handlePointerUp,
