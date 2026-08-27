@@ -21,15 +21,9 @@ import React from 'react';
 import * as jsxRuntime from 'react/jsx-runtime';
 import { createRoot } from 'react-dom/client';
 import { makeFactory } from '../../src/client/app';
+import { isOverlayOpen } from '../../src/client/menu';
 
 // ---------- 假 DSH 模块系统 ----------
-
-/** preload 暴露的桌面桥接口（编译期声明） */
-declare global {
-  interface Window {
-    petDesktop?: { setInteractive: (interactive: boolean) => void };
-  }
-}
 
 /** require 映射：只提供插件声明的两个宿主模块（其余一律报错暴露问题） */
 function requireShim(mod: string): unknown {
@@ -111,13 +105,15 @@ function setInteractive(interactive: boolean): void {
 }
 
 // elementFromPoint 尊重 CSS pointer-events：空白处返回 html/body（不命中任何容器）
-// → 恢复穿透；宠物本体/菜单/弹窗上返回对应元素 → 关闭穿透
+// → 恢复穿透；宠物本体/菜单/弹窗上返回对应元素 → 关闭穿透。
+// 关键：菜单/弹窗打开期间（isOverlayOpen）必须强制可交互——否则点击穿透开启时，
+// 「点菜单外关闭」的点击会落到下方应用、页面收不到事件，弹层永远关不掉（双平台同因）。
 document.addEventListener(
   'mousemove',
   (e) => {
     const hit = document.elementFromPoint(e.clientX, e.clientY);
     const interactive =
-      !!hit && !!hit.closest('.dsh-pet-root, .dsh-pet-menu, .dsh-pet-credits, .dsh-pet-apibox');
+      isOverlayOpen() || (!!hit && !!hit.closest('.dsh-pet-root, .dsh-pet-menu, .dsh-pet-credits, .dsh-pet-apibox'));
     setInteractive(interactive);
   },
   { passive: true },

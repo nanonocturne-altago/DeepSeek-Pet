@@ -31,7 +31,21 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { execFile } = require('node:child_process');
-const { app } = require('electron'); // 仅用于 app.isPackaged 判断（本文件由主进程加载，运行于 Electron 内）
+/**
+ * Electron 应用对象（仅主进程内可用；纯 node 测试环境下 require('electron') 返回路径字符串，
+ * 此时优雅降级为「非打包/用户目录」行为，保证测试装置可独立运行 server.cjs）
+ */
+let electronApp = null;
+try {
+  const electron = require('electron');
+  if (electron && typeof electron === 'object' && electron.app) electronApp = electron.app;
+} catch {
+  electronApp = null;
+}
+const isPackagedApp = electronApp ? electronApp.isPackaged : false;
+/** 标准应用数据目录（macOS/Windows 打包版音效落盘处；无 electron 时回落用户目录） */
+const appUserDataDir = () =>
+  electronApp ? electronApp.getPath('userData') : path.join(os.homedir(), '.dsh', 'dsh-pet');
 
 // ==================== 路径常量 ====================
 /** 应用根目录：源码运行时 = 项目根；打包后 = app.asar 内（fs 读取透明） */
@@ -57,7 +71,7 @@ const LEDGER_PATH = path.join(USER_DATA, '.dshw-usage.json');
  * - 开发模式：与插件版共享的 USER_DATA/sound（不污染真实应用数据）。
  */
 function resolveSoundDir() {
-  if (!app.isPackaged) return path.join(USER_DATA, 'sound'); // 开发模式
+  if (!isPackagedApp) return path.join(USER_DATA, 'sound'); // 开发模式
   if (process.platform === 'win32') {
     const exeDir = path.dirname(process.execPath);
     const candidate = path.join(exeDir, 'sound');
@@ -68,9 +82,9 @@ function resolveSoundDir() {
     } catch {
       /* exe 目录只读（如被放在受保护位置）→ 回落到用户数据目录 */
     }
-    return path.join(app.getPath('userData'), 'sound');
+    return path.join(appUserDataDir(), 'sound');
   }
-  if (process.platform === 'darwin') return path.join(app.getPath('userData'), 'sound');
+  if (process.platform === 'darwin') return path.join(appUserDataDir(), 'sound');
   return path.join(USER_DATA, 'sound');
 }
 const SOUND_DIR = resolveSoundDir();

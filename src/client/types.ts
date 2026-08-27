@@ -106,12 +106,16 @@ export interface ClientConfig {
 declare global {
   interface Window {
     petDesktop?: {
+      /** 光标是否在宠物/弹层上：true=关闭点击穿透（可交互） */
+      setInteractive(interactive: boolean): void;
       /** 切换程序坞（Dock）图标的显示/隐藏 */
       setDockVisible(show: boolean): void;
       /** 切换「前台显示」：强制置顶于所有应用（含全屏）之上 */
       setForeground(on: boolean): void;
       /** 读取当前开关状态（菜单打开时同步按钮高亮） */
       getState(): Promise<{ dock: boolean; foreground: boolean }>;
+      /** 退出整个应用（托盘「关闭程序」按钮） */
+      quitApp(): void;
     };
   }
 }

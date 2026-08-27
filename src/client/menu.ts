@@ -355,6 +355,15 @@ let apiClearBtn: HTMLButtonElement | null = null; // API 弹窗：「清空API�
 let apiUpdateBtn: HTMLButtonElement | null = null; // API 弹窗：「更新」按钮（成功变「已更新」）
 
 /**
+ * 是否有菜单/弹窗处于打开状态。
+ * 独立版渲染入口据此强制窗口「可交互」：点击穿透开启时，外部点击会落到下方应用、
+ * 页面收不到事件，导致「点菜单外关闭」失效——弹层打开期间必须让点击到达本页面。
+ */
+export function isOverlayOpen(): boolean {
+  return menuOpen || creditsOpen || apiOpen;
+}
+
+/**
  * 真实缩放值 → 菜单数字框显示值（1–20 整数，线性映射；与 setScale 中数字框回读方向相反）。
  * @param s 真实缩放（0.6–2.5）
  * @returns 1..20 的显示值（0.6→1，2.5→20）
