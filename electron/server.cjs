@@ -141,14 +141,14 @@ function parseJsonc(text) {
 
 /**
  * 用户动画目录（DIY 可维护性）：
- * - macOS 应用：~/Library/Application Support/DSH.Pet.Anime
+ * - macOS 应用：~/Library/Application Support/DeepSeek.Pet/anime
  * - Windows 便携版：exe 同级 motion/
  * - 开发/测试模式：USER_DATA/anime（避免污染真实目录）
  * 首次启动把包内动画按「触发类别」分文件夹播种（idle/turn/moves/clicks/drag/balance + 各分类动作 id），
  * 之后 /thumb 优先从该目录取文件（缺文件回落包内 webm），用户替换/新增文件即可 DIY。
  */
 const ANIME_DIR = (() => {
-  if (isPackagedApp && process.platform === 'darwin') return path.join(appUserDataDir(), 'DSH.Pet.Anime');
+  if (isPackagedApp && process.platform === 'darwin') return path.join(appUserDataDir(), 'anime');
   if (isPackagedApp && process.platform === 'win32') return path.join(path.dirname(process.execPath), 'motion');
   return path.join(USER_DATA, 'anime');
 })();

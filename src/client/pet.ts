@@ -239,7 +239,7 @@ export function makePetUI(rt: {
     // 当前动画名（状态驱动：anim/once/seq 任一变化 → effect 调用 switchTo 切视频）
     const [anim, setAnim] = useState(config.animations.idle[0] ?? '');
 
-    // DIY 随机池：外部动画文件夹（DSH.Pet.Anime / motion）中 idle/turn/drag 的实际文件清单。
+    // DIY 随机池：外部动画文件夹（anime / motion）中 idle/turn/drag 的实际文件清单。
     // 选中该大类后按清单文件数纯随机（1 个文件=100%，4 个=各 25%）；未加载时回落配置名单。
     const [animeDir, setAnimeDir] = useState<{ idle: string[]; turn: string[]; drag: string[] }>({
       idle: [],

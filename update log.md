@@ -38,7 +38,8 @@
 - 修复：macOS 版音效目录仍指向老插件文件夹（~/.dsh/dsh-pet/sound）——改为标准应用数据目录（~/Library/Application Support/DeepSeekPet/sound），首次启动自动迁移旧目录中的用户音效文件（不覆盖同名）
 - 修复（macOS/Windows 双端）：汉堡菜单/弹窗打开后，点击外部无法关闭——根因是点击穿透开启时外部点击落到下方应用、页面收不到事件；修复为弹层打开期间强制窗口可交互，弹层关闭后自动恢复穿透
 - 交互逻辑重构：**单击/双击行为分离**——单击播放随机「点击回应」动画（不再触发余额刷新）；双击（系统原生双击判定）触发余额刷新并按档位播放余额动画；消除历史「clicks 动画被余额动画瞬间掐断」的闪烁。30 分钟周期刷新余额逻辑保留
-- 可维护性/DIY 工程：**动画素材按触发类别分文件夹**（待机/转身/移动/点击/拖曳/余额 + 小动作/玩耍/吃什么/时节/文字，共 11 类 97 个动画），打包后首次启动自动播种到外部目录（macOS：`~/Library/Application Support/DeepSeek.Pet/DSH.Pet.Anime`，Windows：exe 同级 `motion/`）；运行时优先读取外部目录（缺失回落包内原版），支持替换/增删动画
+- 可维护性/DIY 工程：**动画素材按触发类别分文件夹**（待机/转身/移动/点击/拖曳/余额 + 小动作/玩耍/吃什么/时节/文字，共 11 类 97 个动画），打包后首次启动自动播种到外部目录（macOS：`~/Library/Application Support/DeepSeek.Pet/anime`，Windows：exe 同级 `motion/`）；运行时优先读取外部目录（缺失回落包内原版），支持替换/增删动画
+- **动画目录改名 DSH.Pet.Anime → anime**（与 sound 命名统一），首次启动自动整体改名迁移（保留用户 DIY 文件）
 - **数据母目录更名 dsh-pet → DeepSeek.Pet**：独立版与 DeepSeek Harness 彻底解耦——macOS 用户数据目录 `~/Library/Application Support/DeepSeek.Pet`、Windows `%APPDATA%\DeepSeek.Pet`；首次启动自动迁移旧目录（动画/音效/设置/账本/API Key），插件版继续使用原目录互不干扰
 - DIY 随机池：**idle / 转身 / 拖曳 三类动画改为按文件夹内实际文件数纯随机**（1 个文件=100%，N 个=各 1/N）；客户端每 15 秒刷新文件夹清单，增删 webm 后自动加入/退出随机池；文件夹被清空时回落内置名单保证有动画可播
 - 动画文件夹名统一为中文：`turn→转身、drag→拖曳、clicks→点击、balance→余额、moves→移动、idle→待机`，软件内外链接同步更新；旧版英文目录首次启动自动改名迁移（保留用户 DIY 文件，不重复播种）

@@ -32,6 +32,7 @@ const fs = require('fs');
 // macOS → ~/Library/Application Support/DeepSeek.Pet；Windows → %APPDATA%\DeepSeek.Pet
 // 注意：必须在 require('./server.cjs') 之前设置——server.cjs 在模块加载期就会解析动画目录。
 app.setPath('userData', path.join(app.getPath('appData'), 'DeepSeek.Pet'));
+migrateAnimeDirName(); // 旧名 DSH.Pet.Anime → anime（同样必须在 require 前，否则目录解析到旧名）
 
 const { startServer } = require('./server.cjs');
 
@@ -41,17 +42,35 @@ function migrateLegacyDirs() {
     const oldBase = path.join(app.getPath('appData'), 'dsh-pet'); // 历史版本 userData 落点
     const newBase = app.getPath('userData');
     if (oldBase === newBase || !fs.existsSync(oldBase)) return;
-    for (const sub of ['DSH.Pet.Anime', 'sound']) {
-      const src = path.join(oldBase, sub);
-      const dst = path.join(newBase, sub);
+    for (const [srcSub, dstSub] of [
+      ['DSH.Pet.Anime', 'anime'],
+      ['sound', 'sound'],
+    ]) {
+      const src = path.join(oldBase, srcSub);
+      const dst = path.join(newBase, dstSub);
       if (fs.existsSync(src) && !fs.existsSync(dst)) {
         fs.mkdirSync(newBase, { recursive: true });
         fs.renameSync(src, dst);
-        bootLog('migrated ' + sub + ' → ' + newBase);
+        bootLog('migrated ' + srcSub + ' → ' + dst);
       }
     }
   } catch (e) {
     bootLog('migrate error: ' + String(e));
+  }
+}
+
+/** 动画目录改名迁移：DSH.Pet.Anime → anime（与 sound 命名统一；保留用户 DIY 文件，整体改名） */
+function migrateAnimeDirName() {
+  try {
+    const base = app.getPath('userData');
+    const oldDir = path.join(base, 'DSH.Pet.Anime');
+    const newDir = path.join(base, 'anime');
+    if (fs.existsSync(oldDir) && !fs.existsSync(newDir)) {
+      fs.renameSync(oldDir, newDir);
+      bootLog('migrated DSH.Pet.Anime → anime');
+    }
+  } catch (e) {
+    bootLog('anime dir rename error: ' + String(e));
   }
 }
 
