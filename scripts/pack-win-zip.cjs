@@ -15,7 +15,8 @@ const arch = process.argv[2] || 'x64';
 const pkg = require('../package.json');
 const root = path.join(__dirname, '..');
 const release = path.join(root, 'release');
-const srcDir = path.join(release, `win-${arch}-unpacked`);
+// electron-builder 解包目录命名：默认架构 = win-unpacked（无后缀），其余 = win-<arch>-unpacked
+const srcDir = path.join(release, arch === 'x64' ? 'win-unpacked' : `win-${arch}-unpacked`);
 const stageDir = path.join(release, `DeepSeekPet-${pkg.version}-win-${arch}`);
 const zipName = `${path.basename(stageDir)}.zip`;
 const zipPath = path.join(release, zipName);

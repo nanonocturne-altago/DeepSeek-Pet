@@ -216,7 +216,7 @@ function createPetWindow(port) {
 }
 
 // ---- 「行为」开关（主进程为权威状态，菜单按钮经 preload 桥读写） ----
-let dockVisible = true; // 程序坞显示：默认显示 Dock 图标
+let dockVisible = true; // 托盘显示（Windows）/ 程序坞显示（macOS）：默认显示系统图标
 let foregroundOn = false; // 前台显示：默认不强制（全屏应用可盖过宠物）
 
 /** 按当前 foregroundOn 应用置顶层级 */
@@ -236,8 +236,9 @@ function applyForeground() {
   reassertDock();
 }
 
-/** 重新应用 Dock 图标显示状态（抵消 macOS 层级切换引发的 Dock 自动隐藏） */
+/** 重新应用 Dock 图标显示状态（抵消 macOS 层级切换引发的 Dock 自动隐藏；仅 macOS） */
 function reassertDock() {
+  if (process.platform !== 'darwin') return;
   if (dockVisible) {
     void app.dock.show();
     setTimeout(() => {
@@ -248,10 +249,25 @@ function reassertDock() {
   }
 }
 
-// 程序坞显示开关：隐藏 Dock 图标后应用不出现于 Cmd+Tab 与 Dock；恢复需经宠物菜单再次打开
+/** 显示/隐藏托盘图标（Windows）：隐藏=销毁托盘，显示=重建（Electron 托盘无 hide API） */
+function setTrayVisible(show) {
+  if (process.platform !== 'win32') return;
+  if (show) {
+    if (!tray || tray.isDestroyed()) createTray();
+  } else if (tray && !tray.isDestroyed()) {
+    tray.destroy();
+    tray = null;
+  }
+}
+
+// 「托盘显示 / 程序坞显示」开关：Windows 切换托盘图标，macOS 切换 Dock 图标
 ipcMain.on('pet-dock', (_event, show) => {
   dockVisible = !!show;
-  bootLog('dock visible=', dockVisible);
+  bootLog('dock/tray visible=', dockVisible);
+  if (process.platform === 'win32') {
+    setTrayVisible(dockVisible);
+    return;
+  }
   if (dockVisible) void app.dock.show();
   else void app.dock.hide();
 });

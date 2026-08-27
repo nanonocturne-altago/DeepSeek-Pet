@@ -15,4 +15,5 @@ contextBridge.exposeInMainWorld('petDesktop', {
   setDockVisible: (show) => ipcRenderer.send('pet-dock', show),
   setForeground: (on) => ipcRenderer.send('pet-foreground', on),
   getState: () => ipcRenderer.invoke('pet-state'),
+  platform: process.platform,
 });

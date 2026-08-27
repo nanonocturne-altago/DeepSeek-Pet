@@ -114,6 +114,8 @@ declare global {
       setForeground(on: boolean): void;
       /** 读取当前开关状态（菜单打开时同步按钮高亮） */
       getState(): Promise<{ dock: boolean; foreground: boolean }>;
+      /** 运行平台（'darwin' = macOS / 'win32' = Windows），菜单据此显示「程序坞显示」或「托盘显示」 */
+      platform: string;
     };
   }
 }

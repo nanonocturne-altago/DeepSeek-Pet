@@ -346,7 +346,7 @@ let creditsBox: HTMLDivElement | null = null; // 鸣谢弹窗
 let creditsOpen = false; // 鸣谢弹窗开/关
 let modeLedgerBtn: HTMLButtonElement | null = null; // 行4 用量：「本地记账(推荐)」按钮
 let modeTokenBtn: HTMLButtonElement | null = null; // 行4 用量：「API 实时」按钮
-let dockBtn: HTMLButtonElement | null = null; // 行5 行为：「程序坞显示」切换按钮（仅独立版存在）
+let dockBtn: HTMLButtonElement | null = null; // 行5 行为：「托盘显示（Win）/ 程序坞显示（Mac）」切换按钮（仅独立版存在）
 let topBtn: HTMLButtonElement | null = null; // 行5 行为：「前台显示」切换按钮（仅独立版存在）
 /** 独立版行为开关的本页镜像（主进程为权威，打开菜单时经桥同步） */
 const behaviorState = { dock: true, foreground: false };
@@ -533,8 +533,10 @@ function buildMenu(): HTMLDivElement {
     dockBtn = document.createElement('button');
     dockBtn.type = 'button';
     dockBtn.className = 'dsh-pet-mode-btn';
-    dockBtn.textContent = '程序坞显示';
-    dockBtn.title = '切换下方程序坞（Dock）中应用图标的显示与隐藏';
+    // 平台自适应文案：Windows = 托盘显示（系统托盘图标），macOS = 程序坞显示（Dock 图标）
+    const isWin = window.petDesktop.platform === 'win32';
+    dockBtn.textContent = isWin ? '托盘显示' : '程序坞显示';
+    dockBtn.title = isWin ? '切换系统托盘图标的显示与隐藏' : '切换下方程序坞（Dock）中应用图标的显示与隐藏';
     dockBtn.addEventListener('click', () => {
       const next = !behaviorState.dock;
       behaviorState.dock = next; // 先更新本页镜像再同步高亮（主进程为权威，这里只是即时反馈）
