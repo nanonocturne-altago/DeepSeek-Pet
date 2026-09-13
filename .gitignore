@@ -16,3 +16,8 @@ release/
 # 本地开发产物
 *.tgz
 .eslintcache
+
+# 构建副产物误落根目录（electron-builder 构建时复制）
+/main.cjs
+/preload.cjs
+/renderer.js
