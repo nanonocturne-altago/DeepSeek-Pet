@@ -277,18 +277,27 @@ function reassertDock() {
 
 /**
  * 按 dockVisible 应用 Dock 图标显示/隐藏（仅 macOS）。
- * 坑（Electron 已知 bug #25368）：窗口调用过 setVisibleOnAllWorkspaces(true) 后，
+ * 坑 1（Electron 已知 bug #25368）：窗口调用过 setVisibleOnAllWorkspaces(true) 后，
  * app.dock.hide() 会静默失效（isVisible 返回 false 但图标仍留在 Dock）。多屏联合窗口
- * 必须用它（宠物跨所有桌面显示），因此改用 app.setActivationPolicy：
+ * 必须用它（宠物跨所有桌面显示），因此改用 app.setActivationPolicy 作为主机制。
+ * 坑 2（macOS 26 实测）：Dock 菜单（setMenu）仍挂载时切 accessory，Dock 会残留一个
+ * 「小点」占位图标；必须先清掉菜单再切 accessory 才能干净消失。
+ * 坑 3（实测）：setMenu(空菜单) 会把激活策略弹回 regular——顺序必须「清菜单 → accessory」。
  * 'regular' = 常规应用（Dock 有图标、有菜单栏），'accessory' = 附属应用（Dock 无图标、
- * 无菜单栏，窗口正常显示，类菜单栏工具）。切换回 regular 时重新挂载 Dock 菜单
- * （accessory↔regular 切换后系统可能清掉菜单）。
+ * 无菜单栏，窗口正常显示，类菜单栏工具）。切换回 regular 时重新挂载 Dock 菜单。
  */
 function applyDockVisible() {
   if (process.platform !== 'darwin') return;
   try {
-    app.setActivationPolicy(dockVisible ? 'regular' : 'accessory');
-    if (dockVisible) setupDockMenu();
+    if (dockVisible) {
+      app.setActivationPolicy('regular');
+      void app.dock.show();
+      setupDockMenu(); // 重挂菜单（accessory↔regular 切换后系统可能清掉）
+    } else {
+      app.dock.setMenu(Menu.buildFromTemplate([])); // 先清菜单：挂着菜单切 accessory 会残留小点
+      app.setActivationPolicy('accessory');
+      void app.dock.hide(); // 兜底（对 setVisibleOnAllWorkspaces 场景仍需双保险）
+    }
   } catch (err) {
     bootLog('applyDockVisible failed', String((err && err.stack) || err));
   }
