@@ -632,6 +632,26 @@ export function makePetUI(rt: {
       return () => window.removeEventListener('resize', onResize);
     }, []);
 
+    // 托盘（Windows）/ 程序坞菜单（macOS）「归中」：主进程把目标点（窗口坐标 px）推过来，
+    // 这里转成视口比例坐标写回 customPos（与拖拽落点同口径：比例坐标 = 宠物中心点；
+    // customPos 一旦存在即覆盖角落 CSS 定位，渲染时自动经 edgeBounds 钳制贴边）。
+    // 先 stopMove() 停掉在途漫游位移驱动——否则 rAF 会逐帧把位置写回旧轨迹、
+    // 结束时还会把旧终点写回 customPos，覆盖归中结果。
+    useEffect(() => {
+      if (typeof window === 'undefined' || !window.petDesktop || !window.petDesktop.onCenter) return;
+      return window.petDesktop.onCenter((p) => {
+        const W = window.innerWidth;
+        const H = window.innerHeight;
+        if (!W || !H || !p || typeof p.x !== 'number' || typeof p.y !== 'number') return;
+        stopMove();
+        setCustomPos({
+          rx: Math.min(1, Math.max(0, p.x / W)),
+          ry: Math.min(1, Math.max(0, p.y / H)),
+        });
+      });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     // ---- 动画链：播完按权重选下一个（无链式定时器：完全由「前台视频 ended」驱动推进）----
     /**
      * 按 animationWeights 加权 roll 选动画类别，再在类内随机挑具体动作：

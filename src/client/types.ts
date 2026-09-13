@@ -116,6 +116,9 @@ declare global {
       setFocusable(on: boolean): void;
       /** 读取当前开关状态（菜单打开时同步按钮高亮） */
       getState(): Promise<{ dock: boolean; foreground: boolean }>;
+      /** 监听「归中」指令（Windows 托盘 / macOS 程序坞菜单）：回调收到目标点（窗口坐标 px）；
+       *  返回取消订阅函数（effect 卸载时调用） */
+      onCenter(cb: (p: { x: number; y: number }) => void): () => void;
       /** 运行平台（'darwin' = macOS / 'win32' = Windows），菜单据此显示「程序坞显示」或「托盘显示」 */
       platform: string;
     };
