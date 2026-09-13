@@ -267,9 +267,11 @@ function reassertDock() {
   if (process.platform !== 'darwin') return;
   if (dockVisible) {
     applyDockVisible();
+    // 补刀延迟必须 ≥1.1s：Electron 的 dock.show/hide 有 1 秒节流（#37832），且与
+    // setVisibleOnAllWorkspaces 紧挨着调用会产生孤儿 Dock 图标（#37487）
     setTimeout(() => {
       if (dockVisible) applyDockVisible();
-    }, 150);
+    }, 1200);
   } else {
     applyDockVisible();
   }
@@ -279,9 +281,12 @@ function reassertDock() {
  * 按 dockVisible 应用 Dock 图标显示/隐藏（仅 macOS）。
  * 坑 1（Electron 已知 bug #25368）：窗口调用过 setVisibleOnAllWorkspaces(true) 后，
  * app.dock.hide() 会静默失效（isVisible 返回 false 但图标仍留在 Dock）。多屏联合窗口
- * 必须用它（宠物跨所有桌面显示），因此改用 app.setActivationPolicy 作为主机制。
- * 坑 2（macOS 26 实测）：Dock 菜单（setMenu）仍挂载时切 accessory，Dock 会残留一个
- * 「小点」占位图标；必须先清掉菜单再切 accessory 才能干净消失。
+ * 必须用它（宠物跨所有桌面显示），因此改用 app.setActivationPolicy 作为唯一机制。
+ * 坑 2（Electron 已知 bug #37487，macOS 26 实测）：dock.show/hide 与
+ * setVisibleOnAllWorkspaces 紧挨着调用会产生**孤儿 Dock 图标**（灰色问号人像，
+ * 应用退出后仍残留、每次启动累积；accessory 切换后残留图标退化成米粒小点）。
+ * 因此本函数**完全不调用 app.dock.show/hide**，只走 setActivationPolicy，
+ * 并且与窗口/菜单操作之间留出时序间隔。
  * 坑 3（实测）：setMenu(空菜单) 会把激活策略弹回 regular——顺序必须「清菜单 → accessory」。
  * 'regular' = 常规应用（Dock 有图标、有菜单栏），'accessory' = 附属应用（Dock 无图标、
  * 无菜单栏，窗口正常显示，类菜单栏工具）。切换回 regular 时重新挂载 Dock 菜单。
@@ -291,12 +296,15 @@ function applyDockVisible() {
   try {
     if (dockVisible) {
       app.setActivationPolicy('regular');
-      void app.dock.show();
-      setupDockMenu(); // 重挂菜单（accessory↔regular 切换后系统可能清掉）
+      // 延迟重挂菜单：与 policy 切换错开，避免与 Dock 的图标注册竞态
+      setTimeout(() => {
+        if (dockVisible) setupDockMenu();
+      }, 300);
     } else {
       app.dock.setMenu(Menu.buildFromTemplate([])); // 先清菜单：挂着菜单切 accessory 会残留小点
-      app.setActivationPolicy('accessory');
-      void app.dock.hide(); // 兜底（对 setVisibleOnAllWorkspaces 场景仍需双保险）
+      setTimeout(() => {
+        if (!dockVisible) app.setActivationPolicy('accessory');
+      }, 120); // 延迟切 policy：与清菜单错开（清菜单会弹回 regular，立即切会竞态）
     }
   } catch (err) {
     bootLog('applyDockVisible failed', String((err && err.stack) || err));
@@ -442,7 +450,9 @@ app.whenReady()
     createTray(); // Windows：系统托盘（macOS 下为空操作）
 
     // macOS：Dock 右键菜单「归中」——与 Windows 托盘「归中」同功能（macOS 无系统托盘，Dock 是对应入口）
-    if (process.platform === 'darwin') setupDockMenu();
+    // 延迟挂载：窗口创建时的 setVisibleOnAllWorkspaces 与 Dock 菜单注册紧挨着会竞态
+    // 产生孤儿 Dock 图标（Electron #37487），错开 1.5s 再挂
+    if (process.platform === 'darwin') setTimeout(setupDockMenu, 1500);
 
     // macOS：Dock 图标点击时不重建窗口（窗口常驻，仅确保可见）
     app.on('activate', () => {
