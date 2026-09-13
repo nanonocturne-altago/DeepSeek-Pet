@@ -266,13 +266,48 @@ function applyForeground() {
 function reassertDock() {
   if (process.platform !== 'darwin') return;
   if (dockVisible) {
-    void app.dock.show();
+    applyDockVisible();
     setTimeout(() => {
-      if (dockVisible) void app.dock.show();
+      if (dockVisible) applyDockVisible();
     }, 150);
   } else {
-    void app.dock.hide();
+    applyDockVisible();
   }
+}
+
+/**
+ * 按 dockVisible 应用 Dock 图标显示/隐藏（仅 macOS）。
+ * 坑（Electron 已知 bug #25368）：窗口调用过 setVisibleOnAllWorkspaces(true) 后，
+ * app.dock.hide() 会静默失效（isVisible 返回 false 但图标仍留在 Dock）。多屏联合窗口
+ * 必须用它（宠物跨所有桌面显示），因此改用 app.setActivationPolicy：
+ * 'regular' = 常规应用（Dock 有图标、有菜单栏），'accessory' = 附属应用（Dock 无图标、
+ * 无菜单栏，窗口正常显示，类菜单栏工具）。切换回 regular 时重新挂载 Dock 菜单
+ * （accessory↔regular 切换后系统可能清掉菜单）。
+ */
+function applyDockVisible() {
+  if (process.platform !== 'darwin') return;
+  try {
+    app.setActivationPolicy(dockVisible ? 'regular' : 'accessory');
+    if (dockVisible) setupDockMenu();
+  } catch (err) {
+    bootLog('applyDockVisible failed', String((err && err.stack) || err));
+  }
+}
+
+/** 挂载 Dock 右键菜单（「归中」；幂等，重复调用整体替换） */
+function setupDockMenu() {
+  if (process.platform !== 'darwin') return;
+  app.dock.setMenu(
+    Menu.buildFromTemplate([
+      {
+        label: '归中',
+        click: () => {
+          bootLog('center via dock context menu');
+          centerPetToCursorScreen();
+        },
+      },
+    ]),
+  );
 }
 
 /** 显示/隐藏托盘图标（Windows）：隐藏=销毁托盘，显示=重建（Electron 托盘无 hide API） */
@@ -321,8 +356,7 @@ ipcMain.on('pet-dock', (_event, show) => {
     setTrayVisible(dockVisible);
     return;
   }
-  if (dockVisible) void app.dock.show();
-  else void app.dock.hide();
+  applyDockVisible();
 });
 
 // 前台显示开关
@@ -399,19 +433,7 @@ app.whenReady()
     createTray(); // Windows：系统托盘（macOS 下为空操作）
 
     // macOS：Dock 右键菜单「归中」——与 Windows 托盘「归中」同功能（macOS 无系统托盘，Dock 是对应入口）
-    if (process.platform === 'darwin') {
-      app.dock.setMenu(
-        Menu.buildFromTemplate([
-          {
-            label: '归中',
-            click: () => {
-              bootLog('center via dock context menu');
-              centerPetToCursorScreen();
-            },
-          },
-        ]),
-      );
-    }
+    if (process.platform === 'darwin') setupDockMenu();
 
     // macOS：Dock 图标点击时不重建窗口（窗口常驻，仅确保可见）
     app.on('activate', () => {

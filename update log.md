@@ -21,6 +21,10 @@
 - **macOS 程序坞右键菜单同步新增「归中」**（macOS 无系统托盘，Dock 右键菜单为对应入口，双端同逻辑）
 - 归中前自动停掉在途漫游动画位移，防止漫游结束后把旧终点写回、覆盖归中结果
 
+### 🐛 修复
+
+- 修复（macOS）：「程序坞显示」按钮隐藏图标无效——图标一直留在 Dock。根因：v0.2.1 多屏支持给窗口加了 setVisibleOnAllWorkspaces(true)，触发 Electron 已知 bug（#25368），app.dock.hide() 静默失效（内部状态变了但图标不消失）。修复：改用 app.setActivationPolicy('regular'/'accessory') 切换 Dock 图标显示（社区验证过的替代方案），隐藏后窗口与宠物一切照常
+
 ---
 
 ## 2026-08-27 —— v0.2.1 独立桌面版（Electron）
