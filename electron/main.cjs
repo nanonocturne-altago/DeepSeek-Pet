@@ -23,6 +23,7 @@
  */
 'use strict';
 const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron');
+const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -249,32 +250,40 @@ let foregroundOn = false; // 前台显示：默认不强制（全屏应用可盖
 function applyForeground() {
   if (!petWindow || petWindow.isDestroyed()) return;
   if (foregroundOn) {
-    // 强制最上层：屏幕保护层级 + 全屏 Space 可见 → 盖过包括全屏应用在内的一切
+    // 强制最上层：屏幕保护层级 → 盖过包括全屏应用在内的一切（Space 可见性由 applyWindowSpaces 统一管理）
     petWindow.setAlwaysOnTop(true, 'screen-saver');
-    petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   } else {
     // 普通模式：浮于常规窗口之上，全屏应用（视频/游戏）可盖过宠物
     petWindow.setAlwaysOnTop(true, 'floating');
-    petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
   }
+  applyWindowSpaces();
   // 坑：macOS 在窗口切到 screen-saver 层级并「全屏可见」时会自动隐藏 Dock 图标，
   // 这里在层级变更后重新断言 Dock 状态（延迟补刀一次，抵消系统异步隐藏）
   reassertDock();
 }
 
+/**
+ * 按 dockVisible/foregroundOn 应用窗口的 Space 可见性（仅 macOS）。
+ * 坑（macOS 26 实测）：「全工作区可见 + accessory」组合会在 Dock 残留窗口缩略图
+ * （透明宠物窗口显示成米粒白点，且之后图标卡死无法再隐藏）。因此 Dock 图标隐藏时
+ * 关闭全工作区可见——隐藏期间宠物只在当前 Space 显示，换来干净无残留。
+ */
+function applyWindowSpaces() {
+  if (process.platform !== 'darwin') return;
+  if (!petWindow || petWindow.isDestroyed()) return;
+  if (!dockVisible) {
+    petWindow.setVisibleOnAllWorkspaces(false);
+    return;
+  }
+  petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: foregroundOn });
+}
+
 /** 重新应用 Dock 图标显示状态（抵消 macOS 层级切换引发的 Dock 自动隐藏；仅 macOS） */
 function reassertDock() {
   if (process.platform !== 'darwin') return;
-  if (dockVisible) {
-    applyDockVisible();
-    // 补刀延迟必须 ≥1.1s：Electron 的 dock.show/hide 有 1 秒节流（#37832），且与
-    // setVisibleOnAllWorkspaces 紧挨着调用会产生孤儿 Dock 图标（#37487）
-    setTimeout(() => {
-      if (dockVisible) applyDockVisible();
-    }, 1200);
-  } else {
-    applyDockVisible();
-  }
+  // applyDockVisible 内部已含完整恢复链（regular → NSW → 1.2s 后 dock.show + 挂菜单），
+  // 此处只需触发一次
+  applyDockVisible();
 }
 
 /**
@@ -282,12 +291,9 @@ function reassertDock() {
  * 坑 1（Electron 已知 bug #25368）：窗口调用过 setVisibleOnAllWorkspaces(true) 后，
  * app.dock.hide() 会静默失效（isVisible 返回 false 但图标仍留在 Dock）。多屏联合窗口
  * 必须用它（宠物跨所有桌面显示），因此改用 app.setActivationPolicy 作为唯一机制。
- * 坑 2（Electron 已知 bug #37487，macOS 26 实测）：dock.show/hide 与
- * setVisibleOnAllWorkspaces 紧挨着调用会产生**孤儿 Dock 图标**（灰色问号人像，
- * 应用退出后仍残留、每次启动累积；accessory 切换后残留图标退化成米粒小点）。
- * 因此本函数**完全不调用 app.dock.show/hide**，只走 setActivationPolicy，
- * 并且与窗口/菜单操作之间留出时序间隔。
- * 坑 3（实测）：setMenu(空菜单) 会把激活策略弹回 regular——顺序必须「清菜单 → accessory」。
+ * 坑 2（macOS 26 实测）：全工作区可见窗口切 accessory 后 Dock 残留缩略图（米粒白点）
+ * 且图标卡死无法再隐藏——隐藏前必须先关全工作区可见（applyWindowSpaces 处理），
+ * 恢复时再打开。因此本函数**不调用 app.dock.show/hide**，只走 setActivationPolicy。
  * 'regular' = 常规应用（Dock 有图标、有菜单栏），'accessory' = 附属应用（Dock 无图标、
  * 无菜单栏，窗口正常显示，类菜单栏工具）。切换回 regular 时重新挂载 Dock 菜单。
  */
@@ -296,15 +302,24 @@ function applyDockVisible() {
   try {
     if (dockVisible) {
       app.setActivationPolicy('regular');
-      // 延迟重挂菜单：与 policy 切换错开，避免与 Dock 的图标注册竞态
+      applyWindowSpaces();
+      // NSW(true) 会隐式隐藏 Dock 图标（Electron #37487），必须靠 dock.show() 恢复；
+      // dock.show 有 1 秒节流（#37832），延迟 1.2s 调用并随后重挂菜单
       setTimeout(() => {
-        if (dockVisible) setupDockMenu();
-      }, 300);
+        if (!dockVisible) return;
+        void app.dock.show();
+        setupDockMenu();
+        // 兜底（macOS 26 实测）：NSW 窗口的图标可能仍无法恢复——重启 Dock 强制按
+        // 当前 regular 策略重建图标（Dock 会闪一下、几秒恢复，换来图标可靠回归）
+        setTimeout(() => {
+          if (dockVisible) exec('killall Dock');
+        }, 2500);
+      }, 1200);
     } else {
-      app.dock.setMenu(Menu.buildFromTemplate([])); // 先清菜单：挂着菜单切 accessory 会残留小点
+      applyWindowSpaces(); // 先关全工作区可见：开着它切 accessory 会残留白点/图标卡死
       setTimeout(() => {
         if (!dockVisible) app.setActivationPolicy('accessory');
-      }, 120); // 延迟切 policy：与清菜单错开（清菜单会弹回 regular，立即切会竞态）
+      }, 150); // 与窗口 Space 变更错开
     }
   } catch (err) {
     bootLog('applyDockVisible failed', String((err && err.stack) || err));
@@ -449,10 +464,10 @@ app.whenReady()
     petWindow = createPetWindow(port);
     createTray(); // Windows：系统托盘（macOS 下为空操作）
 
-    // macOS：Dock 右键菜单「归中」——与 Windows 托盘「归中」同功能（macOS 无系统托盘，Dock 是对应入口）
-    // 延迟挂载：窗口创建时的 setVisibleOnAllWorkspaces 与 Dock 菜单注册紧挨着会竞态
-    // 产生孤儿 Dock 图标（Electron #37487），错开 1.5s 再挂
-    if (process.platform === 'darwin') setTimeout(setupDockMenu, 1500);
+    // macOS：Dock 图标与右键菜单（「归中」）。
+    // Electron 44 上窗口 NSW(true) 会立即隐式隐藏 Dock 图标——启动时也走一次完整恢复链
+    // （regular → NSW → 1.2s 后 dock.show + 挂菜单），保证图标正常出现
+    if (process.platform === 'darwin') applyDockVisible();
 
     // macOS：Dock 图标点击时不重建窗口（窗口常驻，仅确保可见）
     app.on('activate', () => {

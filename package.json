@@ -146,7 +146,8 @@
       "extendInfo": {
         "CFBundleDisplayName": "DeepSeek娘相随"
       },
-      "artifactName": "DeepSeekPet-${version}-mac-${arch}.${ext}"
+      "artifactName": "DeepSeekPet-${version}-mac-${arch}.${ext}",
+      "timestamp": null
     },
     "win": {
       "target": [
