@@ -24,7 +24,8 @@
 ### 🐛 修复
 
 - 修复（macOS）：「程序坞显示」按钮隐藏图标无效——图标一直留在 Dock。根因：v0.2.1 多屏支持给窗口加了 setVisibleOnAllWorkspaces(true)，触发 Electron 已知 bug（#25368），app.dock.hide() 静默失效（内部状态变了但图标不消失）。修复：改用 app.setActivationPolicy('regular'/'accessory') 切换 Dock 图标显示（社区验证过的替代方案），隐藏后窗口与宠物一切照常
-- 修复（macOS）：「程序坞显示」隐藏后 Dock 残留「小点」占位图标。排查定位为 Electron 31 在 macOS 26 上 Dock 控制不稳定（hide/accessory 时好时坏、挂载 Dock 菜单时切 accessory 残留小点）。**根治：Electron 31.7.7 升级至 40.10.2**——新版本 Dock 控制恢复正常，隐藏后 Dock 与完全退出状态像素级一致，无任何残留；隐藏时先清 Dock 菜单再切 accessory、恢复时重挂菜单
+- 修复（macOS）：「程序坞显示」隐藏后 Dock 残留「小点」占位图标。根因：全工作区可见窗口切 accessory 时 macOS 26 在 Dock 残留窗口缩略图（透明宠物窗口显示成米粒白点）。修复：隐藏时先关全工作区可见（宠物暂居当前 Space）、恢复时重开 + dock.show 恢复 + Dock 重启兜底；Electron 31→40→44 实测对比后定版 40（44 上隐藏完全失效）
+- 注意（macOS）：Dock 里可能有另一个蓝鲸鱼图标属于 Docker（开发工具），其图标为系统固定、任何软件无法隐藏——点「程序坞显示」隐藏的是 DeepSeekPet 自己的图标
 
 ---
 
