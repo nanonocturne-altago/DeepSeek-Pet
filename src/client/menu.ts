@@ -536,7 +536,9 @@ function buildMenu(): HTMLDivElement {
     // 平台自适应文案：Windows = 托盘显示（系统托盘图标），macOS = 程序坞显示（Dock 图标）
     const isWin = window.petDesktop.platform === 'win32';
     dockBtn.textContent = isWin ? '托盘显示' : '程序坞显示';
-    dockBtn.title = isWin ? '切换系统托盘图标的显示与隐藏' : '切换下方程序坞（Dock）中应用图标的显示与隐藏';
+    dockBtn.title = isWin
+      ? '切换系统托盘图标的显示与隐藏'
+      : '切换程序坞（Dock）图标的显示与隐藏（下次启动应用时生效）';
     dockBtn.addEventListener('click', () => {
       const next = !behaviorState.dock;
       behaviorState.dock = next; // 先更新本页镜像再同步高亮（主进程为权威，这里只是即时反馈）

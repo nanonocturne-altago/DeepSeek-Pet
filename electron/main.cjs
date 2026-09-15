@@ -23,7 +23,7 @@
  */
 'use strict';
 const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } = require('electron');
-const { exec } = require('child_process');
+const { exec, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -250,80 +250,109 @@ let foregroundOn = false; // 前台显示：默认不强制（全屏应用可盖
 function applyForeground() {
   if (!petWindow || petWindow.isDestroyed()) return;
   if (foregroundOn) {
-    // 强制最上层：屏幕保护层级 → 盖过包括全屏应用在内的一切（Space 可见性由 applyWindowSpaces 统一管理）
+    // 强制最上层：屏幕保护层级 → 盖过包括全屏应用在内的一切
     petWindow.setAlwaysOnTop(true, 'screen-saver');
+    petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   } else {
     // 普通模式：浮于常规窗口之上，全屏应用（视频/游戏）可盖过宠物
     petWindow.setAlwaysOnTop(true, 'floating');
+    petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
   }
-  applyWindowSpaces();
-  // 坑：macOS 在窗口切到 screen-saver 层级并「全屏可见」时会自动隐藏 Dock 图标，
-  // 这里在层级变更后重新断言 Dock 状态（延迟补刀一次，抵消系统异步隐藏）
-  reassertDock();
 }
 
-/**
- * 按 dockVisible/foregroundOn 应用窗口的 Space 可见性（仅 macOS）。
- * 坑（macOS 26 实测）：「全工作区可见 + accessory」组合会在 Dock 残留窗口缩略图
- * （透明宠物窗口显示成米粒白点，且之后图标卡死无法再隐藏）。因此 Dock 图标隐藏时
- * 关闭全工作区可见——隐藏期间宠物只在当前 Space 显示，换来干净无残留。
- */
-function applyWindowSpaces() {
-  if (process.platform !== 'darwin') return;
-  if (!petWindow || petWindow.isDestroyed()) return;
-  if (!dockVisible) {
-    petWindow.setVisibleOnAllWorkspaces(false);
-    return;
-  }
-  petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: foregroundOn });
+// ==================== macOS Dock 图标显示（LSUIElement 持久方案） ====================
+//
+// 背景（血泪教训，macOS 26 + Electron 31/40/44 实测）：
+//   运行时切换（app.dock.hide / setActivationPolicy / killall Dock）在「全工作区可见」
+//   窗口的应用上全部不可靠：图标留存、米粒白点残留、恢复失效、Dock 闪动。
+// 定稿方案（Macs Fan Control 同款）：LSUIElement（Info.plist 标志）——应用启动时系统
+//   就不注册 Dock 图标，零闪动零残留；切换 = 改 Info.plist + 重签 + 自动重启生效。
+//   设置持久化在用户数据目录 widget-settings.json 的 dockVisible 字段。
+
+/** dockVisible 设置文件路径（与 server.cjs 的 USER_DATA 同源，支持 DSH_PET_USER_DATA 隔离） */
+function dockSettingsPath() {
+  return path.join(process.env.DSH_PET_USER_DATA || app.getPath('userData'), 'widget-settings.json');
 }
 
-/** 重新应用 Dock 图标显示状态（抵消 macOS 层级切换引发的 Dock 自动隐藏；仅 macOS） */
-function reassertDock() {
-  if (process.platform !== 'darwin') return;
-  // applyDockVisible 内部已含完整恢复链（regular → NSW → 1.2s 后 dock.show + 挂菜单），
-  // 此处只需触发一次
-  applyDockVisible();
-}
-
-/**
- * 按 dockVisible 应用 Dock 图标显示/隐藏（仅 macOS）。
- * 坑 1（Electron 已知 bug #25368）：窗口调用过 setVisibleOnAllWorkspaces(true) 后，
- * app.dock.hide() 会静默失效（isVisible 返回 false 但图标仍留在 Dock）。多屏联合窗口
- * 必须用它（宠物跨所有桌面显示），因此改用 app.setActivationPolicy 作为唯一机制。
- * 坑 2（macOS 26 实测）：全工作区可见窗口切 accessory 后 Dock 残留缩略图（米粒白点）
- * 且图标卡死无法再隐藏——隐藏前必须先关全工作区可见（applyWindowSpaces 处理），
- * 恢复时再打开。因此本函数**不调用 app.dock.show/hide**，只走 setActivationPolicy。
- * 'regular' = 常规应用（Dock 有图标、有菜单栏），'accessory' = 附属应用（Dock 无图标、
- * 无菜单栏，窗口正常显示，类菜单栏工具）。切换回 regular 时重新挂载 Dock 菜单。
- */
-function applyDockVisible() {
-  if (process.platform !== 'darwin') return;
+/** 读取 dockVisible 持久设置（widget-settings.json；缺失默认 true=显示） */
+function readDockSetting() {
   try {
-    if (dockVisible) {
-      app.setActivationPolicy('regular');
-      applyWindowSpaces();
-      // NSW(true) 会隐式隐藏 Dock 图标（Electron #37487），必须靠 dock.show() 恢复；
-      // dock.show 有 1 秒节流（#37832），延迟 1.2s 调用并随后重挂菜单
-      setTimeout(() => {
-        if (!dockVisible) return;
-        void app.dock.show();
-        setupDockMenu();
-        // 兜底（macOS 26 实测）：NSW 窗口的图标可能仍无法恢复——重启 Dock 强制按
-        // 当前 regular 策略重建图标（Dock 会闪一下、几秒恢复，换来图标可靠回归）
-        setTimeout(() => {
-          if (dockVisible) exec('killall Dock');
-        }, 2500);
-      }, 1200);
-    } else {
-      applyWindowSpaces(); // 先关全工作区可见：开着它切 accessory 会残留白点/图标卡死
-      setTimeout(() => {
-        if (!dockVisible) app.setActivationPolicy('accessory');
-      }, 150); // 与窗口 Space 变更错开
-    }
-  } catch (err) {
-    bootLog('applyDockVisible failed', String((err && err.stack) || err));
+    const j = JSON.parse(fs.readFileSync(dockSettingsPath(), 'utf8'));
+    return j.dockVisible !== false;
+  } catch {
+    return true;
   }
+}
+
+/** 写入 dockVisible 持久设置（保留其它字段） */
+function writeDockSetting(v) {
+  const p = dockSettingsPath();
+  let j = {};
+  try {
+    j = JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch {
+    /* 首次无文件 */
+  }
+  j.dockVisible = !!v;
+  fs.writeFileSync(p, JSON.stringify(j, null, 2));
+}
+
+/** 应用 bundle 根路径（exe 在 Contents/MacOS/ 下，上溯两层） */
+function appBundlePath() {
+  return path.resolve(path.dirname(app.getPath('exe')), '..', '..');
+}
+
+/** 读取 Info.plist 是否已有 LSUIElement 标志（true = 启动即无 Dock 图标） */
+function plistHasLSUIElement() {
+  try {
+    const out = execSync('/usr/libexec/PlistBuddy -c "Print :LSUIElement" ' + shellQuote(appBundlePath() + '/Contents/Info.plist')).toString();
+    return /true/i.test(out);
+  } catch {
+    return false;
+  }
+}
+
+/** 修改 Info.plist 的 LSUIElement 标志（hidden=true 时应用不再出现在 Dock） */
+function setPlistLSUIElement(hidden) {
+  const plist = appBundlePath() + '/Contents/Info.plist';
+  // 键不存在时 Delete 会报错——先容错删（幂等）
+  try {
+    execSync('/usr/libexec/PlistBuddy -c "Delete :LSUIElement" ' + shellQuote(plist));
+  } catch {
+    /* 本来就没有 */
+  }
+  if (hidden) {
+    execSync('/usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" ' + shellQuote(plist));
+  }
+}
+
+/** 重签应用（改 Info.plist 后必须重签，否则下次启动被 Gatekeeper 判「已损坏」） */
+function resignApp() {
+  execSync('codesign --force --deep -s "Deepseek Local" ' + shellQuote(appBundlePath()));
+}
+
+/** 强制 LaunchServices 重新注册应用（改 Info.plist 后注册缓存不会自动更新，
+ *  不重注册 LSUIElement 会被忽略——Dock 仍按旧注册信息显示图标） */
+function reregisterApp() {
+  execSync(
+    '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f ' +
+      shellQuote(appBundlePath()),
+  );
+}
+
+/** 切换 Dock 图标显示（macOS）：写设置 → 改 plist → 重签 → 重注册。下次启动生效，不重启当前会话 */
+function applyDockSetting(next) {
+  dockVisible = next; // 即时更新按钮状态（持久设置值 = 下次启动生效的样子）
+  writeDockSetting(next);
+  setPlistLSUIElement(!next); // 隐藏 = LSUIElement true
+  resignApp();
+  reregisterApp();
+  bootLog('dock setting=', next, 'LSUIElement=', !next, '(effective on next launch)');
+}
+
+/** shell 引号转义（用于 exec 拼接路径） */
+function shellQuote(s) {
+  return "'" + String(s).replace(/'/g, "'\\''") + "'";
 }
 
 /** 挂载 Dock 右键菜单（「归中」；幂等，重复调用整体替换） */
@@ -380,15 +409,21 @@ function centerPetToCursorScreen() {
   }
 }
 
-// 「托盘显示 / 程序坞显示」开关：Windows 切换托盘图标，macOS 切换 Dock 图标
+// 「托盘显示 / 程序坞显示」开关：Windows 切换托盘图标，macOS 走 LSUIElement 持久方案
 ipcMain.on('pet-dock', (_event, show) => {
-  dockVisible = !!show;
-  bootLog('dock/tray visible=', dockVisible);
+  const next = !!show;
+  bootLog('dock/tray visible=', next);
   if (process.platform === 'win32') {
-    setTrayVisible(dockVisible);
+    dockVisible = next;
+    setTrayVisible(next);
     return;
   }
-  applyDockVisible();
+  // macOS：写设置 → 改 Info.plist(LSUIElement) → 重签 → 自动重启生效（无闪动）
+  try {
+    applyDockSetting(next);
+  } catch (err) {
+    bootLog('applyDockSetting failed', String((err && err.stack) || err));
+  }
 });
 
 // 前台显示开关
@@ -464,10 +499,24 @@ app.whenReady()
     petWindow = createPetWindow(port);
     createTray(); // Windows：系统托盘（macOS 下为空操作）
 
-    // macOS：Dock 图标与右键菜单（「归中」）。
-    // Electron 44 上窗口 NSW(true) 会立即隐式隐藏 Dock 图标——启动时也走一次完整恢复链
-    // （regular → NSW → 1.2s 后 dock.show + 挂菜单），保证图标正常出现
-    if (process.platform === 'darwin') applyDockVisible();
+    // macOS：Dock 图标显示 = LSUIElement 持久方案。
+    // 启动时同步「用户设置」与「Info.plist」（如用户重装过应用）：只改 plist + 重签，
+    // 下次启动生效（当前会话图标状态由本次启动时的 plist 决定，无法运行时改变）
+    if (process.platform === 'darwin') {
+      dockVisible = readDockSetting();
+      const plistHidden = plistHasLSUIElement();
+      if (plistHidden !== !dockVisible) {
+        try {
+          setPlistLSUIElement(!dockVisible);
+          resignApp();
+          reregisterApp();
+          bootLog('dock plist synced to setting (effective next launch)');
+        } catch (err) {
+          bootLog('dock sync failed, continue anyway', String((err && err.stack) || err));
+        }
+      }
+      if (!plistHidden) setupDockMenu(); // 本会话图标可见才挂 Dock 右键菜单（「归中」）
+    }
 
     // macOS：Dock 图标点击时不重建窗口（窗口常驻，仅确保可见）
     app.on('activate', () => {
